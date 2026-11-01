@@ -25,14 +25,16 @@ type playState struct {
 	speakingCool time.Time // 播完后压一小段尾巴，避免 TTS 尾音被当人声
 
 	// 音乐
-	music         bool
-	musicStart    time.Time
-	musicURL      string // 当前曲目地址，播报打断后靠它重新拉起
-	musicTracking bool
-	pendingURL    string
-	immediatePlay bool        // 路由等"没有 AI 回复"的场景：点歌要立刻起播
-	musicEnded    func() bool // 一首歌自然播完时调用：返回 true 表示已接上下一首
-	nativeASR     bool        // 原生 ASR 窗口：期间播放器会被停，不能当成歌播完
+	music          bool
+	musicStart     time.Time
+	musicURL       string // 当前曲目地址，播报打断后靠它重新拉起
+	musicTracking  bool
+	pendingURL     string
+	immediatePlay  bool        // 路由等"没有 AI 回复"的场景：点歌要立刻起播
+	musicEnded     func() bool // 一首歌自然播完时调用：返回 true 表示已接上下一首
+	musicResumePos int         // 播报打断前的位置（ms），恢复后跳回去
+	restoring      bool        // 正在恢复音乐（重启播放器/重拉 URL），期间不判播完
+	nativeASR      bool        // 原生 ASR 窗口：期间播放器会被停，不能当成歌播完
 
 	// 降音量（ducking）
 	duckEnabled  bool
@@ -136,7 +138,37 @@ func (s *Speaker) markSpeaking(on bool) {
 // resumeMusicAfterSpeech 播报结束后恢复音乐播放。
 // miplayer 播完会把 mediaplayer 顶成空闲（不是暂停），所以先试 resume，
 // 设备真的空了就把当前曲目重新拉开（从头发，设备不报位置，拿不到断点）。
+// RememberMusicPosition 记下当前播放位置，供播报结束后跳回。
+// 播报会抢占音频设备，mediaplayer 一停位置就丢了。
+func (s *Speaker) RememberMusicPosition() {
+	if !s.MusicPlaying() {
+		return
+	}
+	pos := s.PlayPositionMs()
+	if pos <= 0 {
+		// 设备对 URL 流常常不报位置：退化成"从起播到现在过了多久"
+		pos = int(s.MusicPositionMs())
+	}
+	if pos <= 0 {
+		return
+	}
+	s.stMu.Lock()
+	s.st.musicResumePos = pos
+	s.stMu.Unlock()
+	log.Printf("🎵 记住播放位置 %dms（播报后跳回）", pos)
+}
+
+func (s *Speaker) takeMusicResumePos() int {
+	s.stMu.Lock()
+	pos := s.st.musicResumePos
+	s.st.musicResumePos = 0
+	s.stMu.Unlock()
+	return pos
+}
+
 func (s *Speaker) resumeMusicAfterSpeech() {
+	s.setRestoring(true)
+	defer s.setRestoring(false)
 	time.Sleep(400 * time.Millisecond) // 等 miplayer 释放音频设备
 
 	s.stMu.Lock()
@@ -146,6 +178,15 @@ func (s *Speaker) resumeMusicAfterSpeech() {
 		return
 	}
 
+	// mphelper play 是厂商自己的"继续"，会话若还在会从原位置接着放
+	if _, err := s.runShell(`mphelper play`, 3000); err == nil {
+		if res, err := s.runShell("ubus -t 2 call mediaplayer player_get_play_status", 3000); err == nil && res != nil {
+			if mediaPlayerStatus(res.Stdout) == 1 {
+				log.Printf("🎵 播报结束，音乐从原位置继续")
+				return
+			}
+		}
+	}
 	if res, err := s.runShell("ubus -t 2 call mediaplayer player_get_play_status", 3000); err == nil && res != nil {
 		switch mediaPlayerStatus(res.Stdout) {
 		case 1:
@@ -166,6 +207,91 @@ func (s *Speaker) resumeMusicAfterSpeech() {
 	s.st.musicStart = time.Now()
 	s.stMu.Unlock()
 	log.Printf("🎵 播报结束，重新拉起当前曲目")
+
+	s.seekToMusicResumePos()
+}
+
+func (s *Speaker) isRestoring() bool {
+	s.stMu.Lock()
+	defer s.stMu.Unlock()
+	return s.st.restoring
+}
+
+func (s *Speaker) setRestoring(on bool) {
+	s.stMu.Lock()
+	s.st.restoring = on
+	if !on {
+		// 恢复结束时重置起播时间，给自动续播一个完整的宽限期
+		s.st.musicStart = time.Now()
+	}
+	s.stMu.Unlock()
+}
+
+// restartNativePlayer 重启 mediaplayer：它偶尔会丢掉声卡句柄但继续报"播放中"，
+// 表现为状态 1、/dev/snd 句柄 0 个、完全没有声音。重启是唯一可靠的恢复方式。
+func (s *Speaker) restartNativePlayer() {
+	oldPID, _, err := s.nativePlayerState()
+	if err != nil {
+		return
+	}
+	_, _ = s.runShell(`kill -9 $(pidof mediaplayer) 2>/dev/null; true`, 3000)
+	for i := 0; i < 20; i++ {
+		time.Sleep(200 * time.Millisecond)
+		pid, _, err := s.nativePlayerState()
+		if err == nil && pid > 0 && pid != oldPID {
+			log.Printf("♻️ 播放器已重启（%d → %d）", oldPID, pid)
+			return
+		}
+	}
+	log.Printf("⚠️ 播放器重启超时（旧 pid=%d）", oldPID)
+}
+
+// seekToMusicResumePos 把播放器跳到播报前记住的位置（设备按 URL 拉流，位置只能自己记）。
+func (s *Speaker) seekToMusicResumePos() {
+	pos := s.takeMusicResumePos()
+	if pos <= 0 {
+		return
+	}
+	time.Sleep(1200 * time.Millisecond) // 等播放器真正开始
+	script := fmt.Sprintf(`ubus -t 2 call mediaplayer player_set_positon '{"position":%d}'`, pos)
+	if _, err := s.runShell(script, 3000); err != nil {
+		log.Printf("⚠️ 跳回播放位置失败: %v", err)
+		return
+	}
+	// 回读一次，确认设备真的跳过去了（ubus 调用失败不一定会让 shell 返回非 0）
+	time.Sleep(500 * time.Millisecond)
+	if now := s.PlayPositionMs(); now > 0 {
+		log.Printf("🎵 已跳回播放位置 %dms（设备回报 %dms）", pos, now)
+		s.stMu.Lock()
+		s.st.musicStart = time.Now().Add(-time.Duration(now) * time.Millisecond)
+		s.stMu.Unlock()
+	} else {
+		// 设备不报位置：用我们发的目标值校准 elapsed
+		s.stMu.Lock()
+		s.st.musicStart = time.Now().Add(-time.Duration(pos) * time.Millisecond)
+		s.stMu.Unlock()
+		log.Printf("🎵 已发跳转 %dms（设备不回报位置，已按目标值校准）", pos)
+	}
+}
+
+// SyncMusicStateFromDevice 启动/重连时把内存里的音乐态对齐到设备真实状态。
+// 只负责"设备在放但状态丢了"这一种情况；设备没在放就不动，避免凭空造出一个音乐态。
+func (s *Speaker) SyncMusicStateFromDevice() {
+	if s.MusicPlaying() {
+		return
+	}
+	res, err := s.runShell("ubus -t 2 call mediaplayer player_get_play_status", 3000)
+	if err != nil || res == nil {
+		return
+	}
+	if mediaPlayerStatus(res.Stdout) != 1 {
+		return
+	}
+	s.stMu.Lock()
+	s.st.music = true
+	s.st.musicStart = time.Now()
+	s.stMu.Unlock()
+	log.Printf("🎵 启动对齐：设备还在播放，恢复音乐态")
 }
 
 func (s *Speaker) StopTTS() error {
@@ -491,6 +617,20 @@ func (s *Speaker) PlayURL(url string, blocking bool) error {
 		s.HideThinkingLED()
 	}
 	if blocking {
+		// 播报前把音乐暂停（不是停止）：播放器自己保存位置，
+		// miplayer 抢设备也不会把会话弄死，播完 play 就能接着放。
+		if s.MusicPlaying() {
+			out, err := s.runShell(`mphelper pause`, 3000)
+			if err != nil {
+				log.Printf("⚠️ 播报前暂停音乐失败: %v", err)
+			} else {
+				stdout := ""
+				if out != nil {
+					stdout = strings.TrimSpace(out.Stdout)
+				}
+				log.Printf("⏸️ 播报前暂停音乐（保留播放位置）: %s", stdout)
+			}
+		}
 		// 播报期间屏蔽服务端唤醒的自听（没有 AEC，只能"自己说话时不听"）
 		s.markSpeaking(true)
 		defer s.markSpeaking(false)
@@ -572,6 +712,8 @@ func (s *Speaker) NativeASRWindow() bool {
 // EndNativeASRWindow 关闭原生 ASR 窗口，并把被原生 dialog 停掉的当前曲目接回来。
 // 不切下一首：窗口只是"停下来听"，歌并没有播完。
 func (s *Speaker) EndNativeASRWindow() {
+	s.setRestoring(true)
+	defer s.setRestoring(false)
 	s.stMu.Lock()
 	if !s.st.nativeASR {
 		s.stMu.Unlock()
@@ -616,6 +758,7 @@ func (s *Speaker) EndNativeASRWindow() {
 	s.st.musicStart = time.Now()
 	s.stMu.Unlock()
 	log.Printf("🎵 原生识别结束，重新拉起当前曲目")
+	s.seekToMusicResumePos()
 }
 
 // MusicPlaying 当前是否在放音乐（MCP 播放的歌）。
@@ -1107,6 +1250,11 @@ func (s *Speaker) trackMusic() {
 			idle = 0
 			continue
 		}
+		// 恢复动作（重启播放器 + 重拉 URL）期间播放器本来就是停的，不能当成播完
+		if s.isRestoring() {
+			idle = 0
+			continue
+		}
 		if !playing || time.Now().After(deadline) || startedAt.IsZero() {
 			s.stMu.Lock()
 			s.st.music = false
@@ -1136,6 +1284,8 @@ func (s *Speaker) trackMusic() {
 		// 两种都算自然结束，交给队列接下一首；2=暂停（物理按键）不自动切。
 		if status == 0 || status == 3 {
 			if next := s.musicEndedHandler(); next != nil && next() {
+				log.Printf("🎵 判定播完：status=%d idle=%d 已播 %v → 接下一首",
+					status, idle, time.Since(startedAt).Round(time.Second))
 				idle = 0
 				continue
 			}

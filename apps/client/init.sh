@@ -108,6 +108,70 @@ prepare_aec_reference() {
     return 0
 }
 
+
+# ---------- 语音宿主模式 ----------
+# 存在 $WORK_DIR/speech-host 时启用：停掉原生助手，由 client 接管 speech.usock。
+# client 起来并绑好 socket 之后，再启动 pns（mips 连上来）和 mico（只留非语音服务）。
+SPEECH_HOST_MARKER="$WORK_DIR/speech-host"
+SPEECH_SOCKET=/tmp/mico_aivs_lab/usock/speech.usock
+SPEECH_SOCKET_BAK=/tmp/speech.usock.native
+SPEECH_HOST_PNS=/tmp/pns.pcm
+
+speech_host_enabled() { [ -f "$SPEECH_HOST_MARKER" ]; }
+
+prepare_speech_host() {
+    speech_host_enabled || return 0
+    echo "🎙️ 语音宿主模式：接管 speech.usock"
+    /etc/init.d/mico_aivs_lab stop >/dev/null 2>&1
+    /etc/init.d/pns stop >/dev/null 2>&1
+    killall mipns-xiaomi 2>/dev/null
+    sleep 1
+    [ -S "$SPEECH_SOCKET" ] && mv "$SPEECH_SOCKET" "$SPEECH_SOCKET_BAK"
+    sed 's/[[:space:]]-r[[:space:]]opus32//g' /etc/init.d/pns > "$SPEECH_HOST_PNS" || return 1
+    if grep -q -- '-r[[:space:]]*opus32' "$SPEECH_HOST_PNS"; then
+        echo "❌ pns 参数补丁失败（找不到 opus32）" >&2
+        return 1
+    fi
+    chmod +x "$SPEECH_HOST_PNS"
+    mount -o bind "$SPEECH_HOST_PNS" /etc/init.d/pns || return 1
+    amixer -c 0 sset 'Loopback Enable' Enable >/dev/null 2>&1
+    (
+        i=0
+        while [ "$i" -lt 50 ]; do
+            [ -S "$SPEECH_SOCKET" ] && break
+            sleep 0.2 2>/dev/null || sleep 1
+            i=$((i + 1))
+        done
+        if [ ! -S "$SPEECH_SOCKET" ]; then
+            echo "❌ 语音 socket 没有出现，放弃宿主模式" >&2
+            exit 1
+        fi
+        # 保护 socket：mico 重建时不会把我们的换掉
+        mount -o bind "$SPEECH_SOCKET" "$SPEECH_SOCKET" 2>/dev/null
+        /etc/init.d/pns start >/dev/null 2>&1
+        sleep 2
+        /etc/init.d/mico_aivs_lab start >/dev/null 2>&1
+        # 重启播放器：mips 重开采集后，旧的 mediaplayer 会丢掉声卡句柄，
+        # 表现是"状态显示在播、但一点声音都没有"。
+        /etc/init.d/mediaplayer restart >/dev/null 2>&1
+        sleep 1
+        echo "🎙️ 语音宿主就绪：mipns=$(pidof mipns-xiaomi) aivs=$(pidof mico_aivs_lab) player=$(pidof mediaplayer)"
+    ) >>"$LOG" 2>&1 &
+    return 0
+}
+
+restore_speech_host() {
+    speech_host_enabled || return 0
+    /etc/init.d/pns stop >/dev/null 2>&1
+    umount "$SPEECH_SOCKET" 2>/dev/null
+    umount /etc/init.d/pns 2>/dev/null
+    rm -f "$SPEECH_SOCKET"
+    [ -e "$SPEECH_SOCKET_BAK" ] && mv "$SPEECH_SOCKET_BAK" "$SPEECH_SOCKET"
+    /etc/init.d/mico_aivs_lab start >/dev/null 2>&1
+    /etc/init.d/pns start >/dev/null 2>&1
+    echo "🎙️ 已恢复原生语音服务"
+}
+
 # ---------- 预检 ----------
 preflight() {
     [ -f "$CLIENT" ] || die "预检失败[二进制]: 找不到 ${CLIENT}，请先下载 client"
@@ -228,6 +292,11 @@ cmd_start() {
     # 放在取锁之后：已经有一个实例在跑时不要白重启一次 pns。
     # 参考通道没开时 AEC 等于不工作，但失败不该拦住 client 启动（还有 ducking 兜底）。
     prepare_aec_reference || echo "⚠️ AEC 参考通道准备失败，继续启动" >&2
+    if speech_host_enabled; then
+        prepare_speech_host
+        # 必须放在 URL 前面：client 用 flag.Parse，遇到第一个非 flag 参数就停了
+        ARGS="-speech-host $ARGS"
+    fi
     echo "🔥 启动 client: $ARGS (日志: $LOG)"
     supervise
 }
@@ -266,6 +335,7 @@ cmd_stop() {
     alive "$sp" && kill -9 "$sp" 2>/dev/null
     if alive "$sp" || alive "$cp"; then die "停止失败，进程仍存在"; fi
     rm -rf "$STATE"
+    restore_speech_host
     echo "stopped"
 }
 

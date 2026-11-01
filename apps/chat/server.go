@@ -282,6 +282,9 @@ func restorePendingMusicDuck(app *appRuntime) {
 	go func() {
 		time.Sleep(time.Second)
 		app.speaker.RestorePendingMusicDuck()
+		// 服务重启期间设备可能还在放歌：把内存状态对齐到真实播放器，
+		// 否则后面会把"放歌中"当成"没在放"，音乐就再也接不回去。
+		app.speaker.SyncMusicStateFromDevice()
 	}()
 }
 

@@ -19,6 +19,7 @@ import (
 	"github.com/cxjava/open-xiaoai/apps/client/services/audio"
 	"github.com/cxjava/open-xiaoai/apps/client/services/connect"
 	"github.com/cxjava/open-xiaoai/apps/client/services/monitor"
+	"github.com/cxjava/open-xiaoai/apps/client/services/speechhost"
 	"github.com/cxjava/open-xiaoai/apps/client/utils"
 )
 
@@ -27,6 +28,8 @@ var (
 	flagSwitchKeywords = flag.String("switch-keywords", "小智模式,对话模式", "切换模式下的触发词，逗号分隔")
 	flagCaptureBackend = flag.String("capture-backend", "noop", "音频采集后端：noop（默认）或 usock（接管固件 speech.usock）")
 	flagMicStream      = flag.Bool("mic-stream", false, "把麦克风音频持续推给服务端（服务端唤醒模式，配合 -capture-backend noop）")
+	flagSpeechHost     = flag.Bool("speech-host", false, "接管 speech.usock（原生助手不再处理语音，配合 init.sh 的 speech_host 模式）")
+	flagSpeechSocket   = flag.String("speech-socket", "/tmp/mico_aivs_lab/usock/speech.usock", "语音 socket 路径")
 	flagMicDevice      = flag.String("mic-device", "noop", "arecord 采集设备名（固件 dsnoop 共享设备：noop / Capture）")
 )
 
@@ -93,6 +96,8 @@ func (c *AppClient) init(conn *websocket.Conn, cfg *runConfig) {
 	rpc.AddCommand("stop_recording", stopRecording)
 	rpc.AddCommand("continue_dialog", continueDialog)
 	rpc.AddCommand("native_continue_dialog", nativeContinueDialog)
+	rpc.AddCommand("drain_native_player", drainNativePlayer)
+	rpc.AddCommand("finish_native_dialog", finishNativeDialog)
 	rpc.AddCommand("finish_dialog", finishDialog)
 
 	c.instructionMonitor.Start(func(event monitor.FileMonitorEvent) {
@@ -239,7 +244,25 @@ func (c *AppClient) run() {
 
 	// 服务端唤醒模式：固件用 dsnoop 共享采集，我们可以再开一路 arecord 与它同时收音。
 	// 音频推给服务端做唤醒词识别（电脑算力充足，模型可以比音箱本地大得多）。
-	if *flagMicStream {
+	if *flagSpeechHost {
+		h, err := speechhost.Start(*flagSpeechSocket, func(activate uint64) {
+			_ = connect.GetMessageManager().SendEvent("native_wake", map[string]uint64{"activate": activate})
+		}, func(pcm []byte) {
+			// mips 一次给 60ms（1920B），按服务端习惯切成 20ms 帧
+			for len(pcm) >= 640 {
+				_ = connect.GetMessageManager().SendStream("mic", pcm[:640], nil)
+				pcm = pcm[640:]
+			}
+		})
+		if err != nil {
+			log.Fatalf("❌ 语音宿主启动失败: %v", err)
+		}
+		speechHost = h
+		defer h.Close()
+		log.Printf("🎙️ 语音宿主模式：原生助手已让出语音通道")
+	}
+
+	if *flagMicStream && !*flagSpeechHost {
 		streamer, err := audio.StartMicStream(*flagMicDevice, func(chunk []byte) error {
 			// 还没连上服务端时丢弃即可，不刷日志
 			_ = connect.GetMessageManager().SendStream("mic", chunk, nil)
@@ -432,6 +455,17 @@ func stopNative(req connect.Request) (connect.Response, error) {
 	return connect.SuccessResponse(), nil
 }
 
+// speechHost 语音宿主（-speech-host 时非空），供 RPC 结束本轮收音。
+var speechHost *speechhost.Host
+
+// finishNativeDialog 服务端 VAD 判停后调用：停采集并结束本轮 dialog。
+func finishNativeDialog(_ connect.Request) (connect.Response, error) {
+	if speechHost != nil {
+		speechHost.StopTurn()
+	}
+	return connect.SuccessResponse(), nil
+}
+
 // freezeNative 冻结固件原生播放器（mediaplayer）。
 // 原生 TTS 和音乐都走它；我们自己的 TTS 走 miplayer，不受影响。
 func freezeNative(req connect.Request) (connect.Response, error) {
@@ -496,6 +530,20 @@ func stopPlay(_ connect.Request) (connect.Response, error) {
 	if err := audio.GetPlayer().Stop(); err != nil {
 		return connect.Response{}, err
 	}
+	return connect.SuccessResponse(), nil
+}
+
+// drainNativePlayer 温和地结束原生播放：本地一次 shell 里先 SIGCONT 再 stop，
+// 中间不经过服务端往返，尽量缩小"解冻后小爱先冒一声"的窗口。
+func drainNativePlayer(_ connect.Request) (connect.Response, error) {
+	script := `MP=$(pidof mediaplayer); ` +
+		`if [ -n "$MP" ]; then kill -CONT $MP 2>/dev/null; fi; ` +
+		`ubus -t 2 call mediaplayer player_play_operation '{"action":"stop"}' >/dev/null 2>&1; true`
+	if _, err := utils.RunShellWithTimeout(script, 4*time.Second); err != nil {
+		log.Printf("🎚️ [rpc] drain_native_player 失败: %v", err)
+		return connect.Response{}, err
+	}
+	log.Printf("🎚️ [rpc] drain_native_player：已解冻并停止原生播放")
 	return connect.SuccessResponse(), nil
 }
 

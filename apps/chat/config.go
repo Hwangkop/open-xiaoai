@@ -252,6 +252,9 @@ type MusicDuckConfig struct {
 // 由豆包接管这一轮对话，播完再解冻。详见 docs/device-audio-aec-native-asr.md。
 type NativeWakeConfig struct {
 	Enabled bool `yaml:"takeover_enabled"`
+	// Mode 接管方式：freeze=冻结播放器（默认）；speech_host=接管 speech.usock。
+	// 真正决定模式的是 client 的 -speech-host 参数，这里只用于文档与启动检查。
+	Mode string `yaml:"mode"`
 	// MaxSeconds 单轮接管的最长时长（秒），超时强制解冻，避免音乐永久停住。<=0 用默认 25。
 	MaxSeconds int `yaml:"max_seconds"`
 }
@@ -353,6 +356,7 @@ func defaultConfig() *AppConfig {
 		},
 		NativeWake: NativeWakeConfig{
 			Enabled:    false, // 默认关闭，验收后再打开
+			Mode:       "freeze",
 			MaxSeconds: 25,
 		},
 		MusicRouter: MusicRouterConfig{

@@ -156,13 +156,23 @@ func (s *Speaker) watchNativeTakeover(stop <-chan struct{}) {
 
 // resetPlaybackAfterTakeover 结束接管时清掉原生播放队列。
 //
-// 不能"先解冻再 stop"：解冻那一刻排队的原生 TTS 已经开始出声，stop 晚 100ms 就晚了。
-// 这里直接杀掉被冻住的 mediaplayer，procd 会拉起一个干净实例，队列自然没了；
-// 放歌的话再把当前曲目重新拉起来。
+// 分两种情况，目的是"既别让小爱补播，也别把空闲播放器杀掉重来"：
+//   - 没在放歌：让客户端在本地一次完成 SIGCONT + stop（不经网络往返），窗口最小；
+//   - 正在放歌：反正要重新起播，直接重启播放器最干净，顺带丢掉排队的 TTS。
 func (s *Speaker) resetPlaybackAfterTakeover(musicOn bool) {
+	if !musicOn {
+		if _, err := connect.GetRPC().CallRemote("drain_native_player", nil, &nativeTakeoverRPCTimeoutMs); err != nil {
+			log.Printf("⚠️ 温和结束原生播放失败，退回解冻: %v", err)
+			_ = s.unfreezeNative(0)
+		} else {
+			log.Printf("🎚️ 原生播放已解冻并停止（未重启播放器）")
+		}
+		return
+	}
+
 	oldPID, _, _ := s.nativePlayerState()
 	if _, err := s.runShell(`kill -9 $(pidof mediaplayer) 2>/dev/null; true`, 4000); err != nil {
-		log.Printf("⚠️ 结束接管时杀掉原生播放器失败: %v", err)
+		log.Printf("⚠️ 结束接管时重启原生播放器失败: %v", err)
 	}
 
 	newPID := 0
@@ -181,9 +191,7 @@ func (s *Speaker) resetPlaybackAfterTakeover(musicOn bool) {
 	} else {
 		log.Printf("♻️ 原生播放器已重启（%d → %d），排队的原生 TTS 已丢弃", oldPID, newPID)
 	}
-	if musicOn {
-		s.resumeMusicAfterSpeech()
-	}
+	s.resumeMusicAfterSpeech()
 }
 
 func (s *Speaker) setTakeoverPid(pid int) {
@@ -228,6 +236,14 @@ func (s *Speaker) unfreezeNative(pid int) error {
 func (s *Speaker) ContinueNativeDialog() error {
 	if _, err := connect.GetRPC().CallRemote("native_continue_dialog", nil, &nativeTakeoverRPCTimeoutMs); err != nil {
 		return fmt.Errorf("native_continue_dialog 调用失败: %w", err)
+	}
+	return nil
+}
+
+// FinishNativeDialog 结束本轮原生收音（语音宿主模式下由服务端 VAD 判停后调用）。
+func (s *Speaker) FinishNativeDialog() error {
+	if _, err := connect.GetRPC().CallRemote("finish_native_dialog", nil, &nativeTakeoverRPCTimeoutMs); err != nil {
+		return fmt.Errorf("finish_native_dialog 调用失败: %w", err)
 	}
 	return nil
 }

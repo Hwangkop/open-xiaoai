@@ -45,6 +45,9 @@ type Engine struct {
 	xiaoiSpeaking   atomic.Bool
 	xiaoiSpeakUntil atomic.Int64
 
+	// speechHostActive 语音宿主模式：原生助手已被摘掉，语音由 speech.usock 直接送上来
+	speechHostActive atomic.Bool
+
 	// nativeTurn 标记本轮由「小爱同学」触发：这种轮次结束后不续开本地对话窗口，
 	// 否则本地 ASR 会把小爱的播报、环境声继续当成指令送给豆包。
 	nativeTurn atomic.Bool
@@ -169,6 +172,27 @@ func (e *Engine) OnEvent(event connect.Event) {
 		e.speaker.UpdateStatus(dataStr)
 	case "instruction":
 		e.handleInstruction(data)
+	case "native_wake":
+		// 语音宿主模式：mips 的 KWS 命中「小爱同学」，紧接着会推 ASR 音频上来
+		var ev struct {
+			Activate uint64 `json:"activate"`
+		}
+		_ = json.Unmarshal(data, &ev)
+		e.speechHostActive.Store(true)
+		// 唤醒这一刻播放器还在放，先记住位置；等 mips 抢走设备就读不到了
+		e.speaker.RememberMusicPosition()
+		// 宿主模式没有「我在」提示音，用户往往等一会儿才开口；
+		// 15 秒默认窗口太短，按宿主一轮 20 秒的收音时长放宽到 30 秒。
+		e.armDialogFor(30 * time.Second)
+		// mips 一开麦就会抢走音频设备，播放器会停。
+		// 告诉音乐状态机"正在收音"，否则轮询会把这次停当成"歌播完了"自动切歌。
+		e.speaker.BeginNativeASRWindow()
+		log.Printf("🎙️ 原生唤醒（语音宿主，activate=%d）→ 进入对话模式，收音窗口已开", ev.Activate)
+		// 兜底：20 秒没有结果就自动关窗（宿主那边 20 秒也会停采集）
+		time.AfterFunc(21*time.Second, func() {
+			e.speaker.EndNativeASRWindow()
+			e.speechHostActive.Store(false)
+		})
 	case "kws":
 		// 本地 KWS（sherpa）独立读麦克风，与小爱固件互不干扰。
 		// 识别到"豆包豆包"这类词时，直接进入对话模式：下一句不必再带触发词。
@@ -190,6 +214,18 @@ func (e *Engine) OnEvent(event connect.Event) {
 			e.InterruptOnly()
 		}
 	}
+}
+
+// stripNativeWakePrefix 去掉语音宿主模式下文本开头的小爱唤醒词。
+func stripNativeWakePrefix(text string) string {
+	out := strings.TrimSpace(text)
+	for _, w := range []string{"小爱同学", "小爱"} {
+		if strings.HasPrefix(out, w) {
+			out = strings.TrimSpace(strings.TrimLeft(out[len(w):], "，,。.！!？? "))
+			break
+		}
+	}
+	return out
 }
 
 // stripWakeWords 去掉句首的触发词/唤醒词，剩下的才是真正的问题。
@@ -337,6 +373,29 @@ func (e *Engine) onUtterance(text string, asr UtteranceASR) {
 		WakeRest: wakeRest,
 		Playing:  e.speaker.MusicPlaying(),
 	})
+
+	// 对话窗口优先于音乐路由：刚被唤醒（或上一轮问答后）说的话就是对话内容，
+	// 不能因为"正在放歌 + 没有动作词"被当成歌词碎片丢掉。
+	// 白名单快路径仍然优先，保证「下一首」「停一下」这类指令立即执行。
+	if e.consumeArmed() {
+		switch d.Path {
+		case musicPathWhitelist:
+			e.execMusicCommand(d.Action, d.Text)
+			via := ""
+			if matched {
+				via = "wake"
+			}
+			recordRoute(routeEntry{Text: d.Text, Stage: "whitelist", Via: via, Action: d.Action, Result: "dispatched"})
+			return
+		case musicPathBareWake:
+			e.handleMatchedWake("")
+			return
+		}
+		e.speaker.ShowThinkingLED()
+		e.handleDialogTurn(text, matched, asr)
+		return
+	}
+
 	switch d.Path {
 	case musicPathBareWake:
 		e.handleMatchedWake("") // 只喊了唤醒词，走原来的"我在"
@@ -367,15 +426,6 @@ func (e *Engine) onUtterance(text string, asr UtteranceASR) {
 	case musicPathDrop:
 		// 歌词碎片只计数，不进列表——否则卡片会被"没唤醒词"刷屏
 		recordNoiseDrop()
-		return
-	}
-
-	// 对话窗口内：唤醒监听暂时关闭，不再判定唤醒词。
-	// 否则「你知道豆包吗」这种句子里带"豆包"会被当成又一次唤醒（管理台显示"命中"），
-	// 句首的"豆包"还会被当唤醒词剥掉（「豆包是谁」→「是谁」）。
-	if e.consumeArmed() {
-		e.speaker.ShowThinkingLED() // 对话窗口内的追问也算"在聊天"，同样点灯
-		e.handleDialogTurn(text, matched, asr)
 		return
 	}
 
@@ -431,6 +481,19 @@ func (e *Engine) handleDialogTurn(text string, matched bool, asr UtteranceASR) {
 	}
 	if asr.Dialog != nil {
 		text = e.refineDialog(text, asr.Dialog)
+	}
+	if e.speechHostActive.Load() {
+		// 这一轮由原生唤醒触发：回答完后自动续听（和冻结模式共用同一套链）
+		e.nativeTurn.Store(true)
+		// 语音宿主模式下 mips 从唤醒词开始推流，文本里带着「小爱同学」
+		text = stripNativeWakePrefix(text)
+		e.speechHostActive.Store(false)
+		go func() {
+			if err := e.speaker.FinishNativeDialog(); err != nil {
+				log.Printf("⚠️ 结束原生收音失败: %v", err)
+			}
+			e.speaker.EndNativeASRWindow()
+		}()
 	}
 	// 同一句话可能刚被小爱 ASR 接管处理过
 	if !e.claimTurn(text) {
@@ -774,6 +837,8 @@ func (e *Engine) startMessage(text string, authorized bool) {
 		// 但音乐不能停：音乐也走 mediaplayer，一句无关的闲聊就把它掐掉太伤了。
 		// 音乐态下交给 miplayer 自己抢占设备，播报结束后由 Speaker 负责接回去。
 		if e.speaker.MusicPlaying() {
+			// 播报会抢音频设备，位置会丢；先记下来，播完跳回去
+			e.speaker.RememberMusicPosition()
 			log.Println("🎵 音乐播放中，跳过停原生播放")
 		} else if err := e.speaker.StopNativePlayback(); err != nil {
 			log.Printf("⚠️ stop_native failed: %v", err)
@@ -1283,6 +1348,12 @@ func (e *Engine) buildMessages(userText string) []openai.ChatCompletionMessage {
 	if cfg.Prompt.System != "" {
 		cap++
 	}
+	// 把"现在到底有没有在放歌"塞进系统提示：模型很爱凭记忆回答"正在放着呢"，
+	// 服务端重启后队列恢复了但播放器是空的，它就会骗用户。
+	musicLine := "[音乐] 当前没有音乐在播放；用户要听歌请直接调用 play_music，不要说\"正在播放\"。"
+	if e.speaker.MusicPlaying() {
+		musicLine = "[音乐] 当前有音乐在播放。"
+	}
 	msgs := make([]openai.ChatCompletionMessage, 0, cap)
 	sys := systemPromptWithEmotion(cfg.Prompt.System)
 	if timeLine != "" {
@@ -1291,6 +1362,10 @@ func (e *Engine) buildMessages(userText string) []openai.ChatCompletionMessage {
 		}
 		sys += timeLine
 	}
+	if sys != "" {
+		sys += "\n"
+	}
+	sys += musicLine
 	if strings.Contains(sys, "{{now}}") || strings.Contains(sys, "{{date}}") {
 		now := time.Now().In(loadTZ(cfg.Prompt.Timezone))
 		sys = strings.ReplaceAll(sys, "{{now}}", now.Format("2006年1月2日 15:04"))
