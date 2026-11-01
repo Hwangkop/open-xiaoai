@@ -886,7 +886,7 @@ func (e *Engine) streamAndPlayOn(ctx context.Context, userText string, forcePlai
 		// 会话会持续复用，所以只在开头付一次成本。
 		if !web.HasConversation() {
 			if sys := strings.TrimSpace(cfg.Prompt.System); sys != "" {
-				prompt = sys + "\n\n" + prompt
+				prompt = systemPromptWithEmotion(sys) + "\n\n" + prompt
 			}
 		}
 		log.Printf("🍬 走豆包网页直连（新会话=%v）", !web.HasConversation())
@@ -921,12 +921,12 @@ func (e *Engine) streamAndPlayOn(ctx context.Context, userText string, forcePlai
 		pipe = newSpeechPipeline(ctx, e.speaker)
 		defer pipe.Close()
 	}
-	speak := func(sentence string) error {
+	speak := func(sentence, emotion string) error {
 		if pipe != nil {
-			pipe.Add(sentence)
+			pipe.AddWithEmotion(sentence, emotion)
 			return nil
 		}
-		return e.playTTS(ctx, sentence)
+		return e.playTTS(ctx, sentence, emotion)
 	}
 
 	var fullReply strings.Builder
@@ -935,6 +935,8 @@ func (e *Engine) streamAndPlayOn(ctx context.Context, userText string, forcePlai
 	// 必须在 LLM 第一个 token 到达后才播——否则等不到 token 就报 prefix 会让用户听到"AI回复...
 	// 然后才是真正的错误提示"，更怪。
 	prefixPlayed := false
+	// 模型一般只在开头标一次情绪，后面沿用；标记变了就切
+	curEmotion := ""
 
 	for {
 		// 主动检查 ctx 取消：用户说"闭嘴"等打断词时，InterruptOnly 会 cancelFunc()，
@@ -949,13 +951,24 @@ func (e *Engine) streamAndPlayOn(ctx context.Context, userText string, forcePlai
 		if errors.Is(err, io.EOF) {
 			// Flush remaining text
 			if sentenceBuf.Len() > 0 {
-				sentence := trimForSpeech(sentenceBuf.String())
-				log.Printf("AI: %s", sentence)
+				sentence, tag := splitEmotionTag(trimForSpeech(sentenceBuf.String()))
+				if tag != "" {
+					curEmotion = tag
+				}
+				emotion := curEmotion
+				if sentence == "" {
+					break
+				}
+				if emotion != "" {
+					log.Printf("AI[%s]: %s", emotion, sentence)
+				} else {
+					log.Printf("AI: %s", sentence)
+				}
 				if hasSpeakableContent(sentence) {
 					if playErr := e.playReplyPrefixOnce(ctx, &prefixPlayed); playErr != nil {
 						return fullReply.String(), playErr
 					}
-					if playErr := speak(sentence); playErr != nil {
+					if playErr := speak(sentence, emotion); playErr != nil {
 						return fullReply.String(), playErr
 					}
 				}
@@ -995,19 +1008,30 @@ func (e *Engine) streamAndPlayOn(ctx context.Context, userText string, forcePlai
 			if ctx.Err() != nil {
 				return fullReply.String(), ctx.Err()
 			}
-			sentence := trimForSpeech(head)
+			sentence, tag := splitEmotionTag(trimForSpeech(head))
+			if tag != "" {
+				curEmotion = tag // 模型通常只标第一句，后面沿用
+			}
+			emotion := curEmotion
+			if sentence == "" {
+				break // 整句只是个标记
+			}
 			// 太短的片段（"1"、"国内"）不单独合成，塞回缓冲等下一句
 			if len([]rune(sentence)) < 4 {
 				sentenceBuf.Reset()
 				sentenceBuf.WriteString(trimForSpeech(head) + rest)
 				break
 			}
-			log.Printf("AI: %s", sentence)
+			if emotion != "" {
+				log.Printf("AI[%s]: %s", emotion, sentence)
+			} else {
+				log.Printf("AI: %s", sentence)
+			}
 			if hasSpeakableContent(sentence) {
 				if playErr := e.playReplyPrefixOnce(ctx, &prefixPlayed); playErr != nil {
 					return fullReply.String(), playErr
 				}
-				if playErr := speak(sentence); playErr != nil {
+				if playErr := speak(sentence, emotion); playErr != nil {
 					return fullReply.String(), playErr
 				}
 			}
@@ -1035,14 +1059,14 @@ func (e *Engine) playReplyPrefixOnce(ctx context.Context, played *bool) error {
 		return ctx.Err()
 	}
 	log.Printf("🤖 AI 回复前缀: %s", prefix)
-	if err := e.playTTS(ctx, prefix); err != nil {
+	if err := e.playTTS(ctx, prefix, ""); err != nil {
 		log.Printf("⚠️ AI 回复前缀 TTS 失败: %v", err)
 		return err
 	}
 	return nil
 }
 
-func (e *Engine) playTTS(ctx context.Context, text string) error {
+func (e *Engine) playTTS(ctx context.Context, text, emotion string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -1051,7 +1075,7 @@ func (e *Engine) playTTS(ctx context.Context, text string) error {
 	// This matches the behavior in the original config.ts.
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- e.speaker.PlayTTS(text, true)
+		errCh <- e.speaker.PlayTTSVoice(text, true, emotion)
 	}()
 
 	select {
@@ -1112,7 +1136,7 @@ func (e *Engine) buildMessages(userText string) []openai.ChatCompletionMessage {
 		cap++
 	}
 	msgs := make([]openai.ChatCompletionMessage, 0, cap)
-	sys := cfg.Prompt.System
+	sys := systemPromptWithEmotion(cfg.Prompt.System)
 	if timeLine != "" {
 		if sys != "" {
 			sys += "\n"

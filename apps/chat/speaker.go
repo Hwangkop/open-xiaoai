@@ -312,6 +312,24 @@ func (s *Speaker) PlayTTS(text string, blocking bool) error {
 	return nil
 }
 
+// PlayTTSVoice 带情绪播报（空 = 配置默认）。
+func (s *Speaker) PlayTTSVoice(text string, blocking bool, emotion string) error {
+	s.markSpeaking(true)
+	defer s.markSpeaking(false)
+	if s.doubaoTTSInstance() != nil {
+		return s.playDoubaoTTSVoice(text, blocking, emotion)
+	}
+	if blocking {
+		return s.PlayTTSWithTimeout(text, 10*60*1000)
+	}
+	go func() {
+		if err := s.PlayTTSWithTimeout(text, 15000); err != nil {
+			log.Printf("⚠️ TTS 播放失败: %v", err)
+		}
+	}()
+	return nil
+}
+
 func (s *Speaker) PlayTTSWithTimeout(text string, timeoutMs uint64) error {
 	// 配了豆包语音就优先用豆包，否则回退音箱自带 tts_play.sh。
 	// （管理台"试播"和引擎回复必须走同一条路，否则听到的音色不一致。）
@@ -357,9 +375,13 @@ func (s *Speaker) PlayTTSWithVoice(text, speaker, emotion string) error {
 	return s.PlayURL(base+"/tts/"+name, true)
 }
 
-// SynthesizeURL 只做语音合成，返回可播放的 URL，不播放。
-// 语音流水线用它提前把后面几句合成好。
+// SynthesizeURL 只做语音合成，返回可播放的 URL，不播放（用配置里的默认情绪）。
 func (s *Speaker) SynthesizeURL(text string) (string, error) {
+	return s.SynthesizeURLVoice(text, "")
+}
+
+// SynthesizeURLVoice 同 SynthesizeURL，但可指定情绪（空 = 用配置默认）。
+func (s *Speaker) SynthesizeURLVoice(text, emotion string) (string, error) {
 	tts := s.doubaoTTSInstance()
 	if tts == nil {
 		return "", errors.New("doubao tts not configured")
@@ -372,7 +394,7 @@ func (s *Speaker) SynthesizeURL(text string) (string, error) {
 	defer cancel()
 
 	start := time.Now()
-	name, err := tts.Synthesize(ctx, text)
+	name, err := tts.WithVoice("", emotion).Synthesize(ctx, text)
 	if err != nil {
 		return "", fmt.Errorf("doubao tts synthesize: %w", err)
 	}
@@ -389,6 +411,11 @@ func (s *Speaker) SynthesizeURL(text string) (string, error) {
 }
 
 func (s *Speaker) playDoubaoTTS(text string, blocking bool) error {
+	return s.playDoubaoTTSVoice(text, blocking, "")
+}
+
+// playDoubaoTTSVoice 同 playDoubaoTTS，可指定情绪。
+func (s *Speaker) playDoubaoTTSVoice(text string, blocking bool, emotion string) error {
 	run := func() error {
 		tts := s.doubaoTTSInstance()
 		if tts == nil {
@@ -402,7 +429,7 @@ func (s *Speaker) playDoubaoTTS(text string, blocking bool) error {
 		defer cancel()
 
 		start := time.Now()
-		name, err := tts.Synthesize(ctx, text)
+		name, err := tts.WithVoice("", emotion).Synthesize(ctx, text)
 		if err != nil {
 			return fmt.Errorf("doubao tts synthesize: %w", err)
 		}

@@ -15,8 +15,9 @@ import (
 )
 
 type speechSeg struct {
-	text string
-	url  chan string // 合成完成后写入可播放的 URL；失败写空串
+	text    string
+	emotion string
+	url     chan string // 合成完成后写入可播放的 URL；失败写空串
 }
 
 type speechPipeline struct {
@@ -39,8 +40,11 @@ func newSpeechPipeline(ctx context.Context, sp *Speaker) *speechPipeline {
 }
 
 // Add 加入一句话：立刻并行发起合成，播放器按顺序播放。
-func (p *speechPipeline) Add(text string) {
-	seg := &speechSeg{text: text, url: make(chan string, 1)}
+func (p *speechPipeline) Add(text string) { p.AddWithEmotion(text, "") }
+
+// AddWithEmotion 同 Add，可带情绪（空 = 配置默认）。
+func (p *speechPipeline) AddWithEmotion(text, emotion string) {
+	seg := &speechSeg{text: text, emotion: emotion, url: make(chan string, 1)}
 
 	// 先入队（保证播放顺序 = 文本顺序），再异步合成
 	select {
@@ -50,7 +54,7 @@ func (p *speechPipeline) Add(text string) {
 	}
 
 	go func() {
-		url, err := p.sp.SynthesizeURL(seg.text)
+		url, err := p.sp.SynthesizeURLVoice(seg.text, seg.emotion)
 		if err != nil {
 			log.Printf("⚠️ TTS 合成失败: %v", err)
 			seg.url <- ""

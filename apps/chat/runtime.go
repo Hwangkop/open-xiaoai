@@ -41,7 +41,7 @@ func newAppRuntime(configPath string, cfg *AppConfig, speaker *Speaker, engine *
 	if cfg != nil && cfg.Chat.UseCodex() && a.engine != nil {
 		cc := cfg.Codex
 		if cc.BaseInstructions == "" {
-			cc.BaseInstructions = cfg.Prompt.System
+			cc.BaseInstructions = systemPromptWithEmotion(cfg.Prompt.System)
 		}
 		srv := NewCodexAppServer(cc)
 		srv.SetThreadFile(filepath.Join(filepath.Dir(a.configPath), "codex-thread.json"))
