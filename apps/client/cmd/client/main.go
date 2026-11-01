@@ -23,7 +23,7 @@ import (
 )
 
 var (
-	flagSwitch         = flag.Bool("switch", false, "切换模式：多地址用于 gemini-go/chat-go 语音切换，说切换词即切换 Server")
+	flagSwitch         = flag.Bool("switch", false, "切换模式：多地址用于在两套 Server 之间语音切换，说切换词即切换 Server")
 	flagSwitchKeywords = flag.String("switch-keywords", "小智模式,对话模式", "切换模式下的触发词，逗号分隔")
 	flagCaptureBackend = flag.String("capture-backend", "noop", "音频采集后端：noop（默认）或 usock（接管固件 speech.usock）")
 	flagMicStream      = flag.Bool("mic-stream", false, "把麦克风音频持续推给服务端（服务端唤醒模式，配合 -capture-backend noop）")

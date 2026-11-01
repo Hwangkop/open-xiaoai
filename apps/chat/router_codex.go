@@ -35,8 +35,11 @@ const defaultCodexRouterPrompt = `你是智能音箱的指令执行器。用户�
 
 每次回复的最后一行只输出一个 JSON，不要写别的话：
 - 已经办完：{"action":"done"}
+- 已办完且需要口头确认（比如点歌，要让人听出放了哪首）：{"action":"done","say":"好，放《歌名》"}
 - 交给主助手回答：{"action":"dialog"}
 - 忽略：{"action":"ignore"}
+
+say 只在"用户看不见结果"时用（点歌、换歌单），不超过 20 字；切歌、调音量这类本来就能听出来的不要加。
 
 能一次办完就一次办完，不要连环调用工具，也不要解释你做了什么。`
 
@@ -102,10 +105,10 @@ func (r *codexRouter) resetThread() {
 }
 
 // Route 让路由 agent 处理一句话，返回 done / dialog / ignore。
-func (r *codexRouter) Route(ctx context.Context, text, state string) (string, error) {
+func (r *codexRouter) Route(ctx context.Context, text, state string) (string, string, error) {
 	id, err := r.threadID(ctx)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	prompt := text
 	if state != "" {
@@ -124,7 +127,7 @@ func (r *codexRouter) Route(ctx context.Context, text, state string) (string, er
 		// 同时丢掉缓存的 thread：app-server 重启（turn 超时/部署）后旧 id 已经不存在，
 		// 不清理的话路由会一直失败，直到整个进程重启。
 		r.resetThread()
-		return "", err
+		return "", "", err
 	}
 	if strings.TrimSpace(reply) == "" {
 		mu.Lock()
@@ -134,45 +137,46 @@ func (r *codexRouter) Route(ctx context.Context, text, state string) (string, er
 	if strings.TrimSpace(reply) == "" {
 		// 空回复不能当成"忽略"——那会把真实指令静默丢掉，也让用户以为没反应。
 		// 抛错让调用方回退到分类器。
-		return "", fmt.Errorf("路由没有返回内容")
+		return "", "", fmt.Errorf("路由没有返回内容")
 	}
-	return parseRouterAction(reply), nil
+	action, say := parseRouterAction(reply)
+	return action, say, nil
 }
 
-// parseRouterAction 从回复里取最后一个 {"action":...}。
-func parseRouterAction(reply string) string {
+// parseRouterAction 从回复里取最后一个 {"action":...,"say":...}。
+func parseRouterAction(reply string) (action, say string) {
 	idx := strings.LastIndex(reply, "{")
 	if idx < 0 {
-		return "ignore"
+		return "ignore", ""
 	}
 	var v struct {
 		Action string `json:"action"`
+		Say    string `json:"say"`
 	}
 	if err := json.Unmarshal([]byte(reply[idx:]), &v); err != nil {
 		// 可能后面还跟了别的字符，截到最后 } 再试一次
 		end := strings.LastIndex(reply, "}")
 		if end > idx {
 			if err2 := json.Unmarshal([]byte(reply[idx:end+1]), &v); err2 != nil {
-				return "ignore"
+				return "ignore", ""
 			}
 		} else {
-			return "ignore"
+			return "ignore", ""
 		}
 	}
-	switch strings.ToLower(strings.TrimSpace(v.Action)) {
+	act := strings.ToLower(strings.TrimSpace(v.Action))
+	switch act {
 	case "done", "dialog", "ignore":
-		return strings.ToLower(strings.TrimSpace(v.Action))
-	case "":
-		return "ignore"
+		return act, strings.TrimSpace(v.Say)
 	}
-	return "ignore"
+	return "ignore", ""
 }
 
 // routeTimeout 路由一轮的上限（含工具调用）。
 const routeTimeout = 20 * time.Second
 
 // applyCodexRoute 处理 codex 路由的结果：动作已经由工具执行过了，这里只决定要不要转对话。
-func (e *Engine) applyCodexRoute(ctx context.Context, text, action, via string, latencyMs int64) {
+func (e *Engine) applyCodexRoute(ctx context.Context, text, action, via string, latencyMs int64, say string) {
 	entry := routeEntry{Text: text, Stage: "router", Via: via, Action: action, LatencyMs: latencyMs}
 	switch action {
 	case "dialog":
@@ -182,6 +186,14 @@ func (e *Engine) applyCodexRoute(ctx context.Context, text, action, via string, 
 	case "done":
 		entry.Result = "executed"
 		recordRoute(entry)
+		// 路由器说"办完了，而且要口头确认"（点歌这类看不见结果的）
+		if say = strings.TrimSpace(say); say != "" && len([]rune(say)) <= 40 {
+			go func() {
+				if err := e.speaker.PlayTTS(say, true); err != nil {
+					log.Printf("⚠️ 确认播报失败: %v", err)
+				}
+			}()
+		}
 	default:
 		entry.Result = "ignored"
 		recordRoute(entry)

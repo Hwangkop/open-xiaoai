@@ -272,7 +272,7 @@ music_duck:
 # 模型只输出 JSON，置信度低于 min_confidence 一律不动手（当噪声丢掉）。
 music_router:
   enabled: true
-  engine: "codex"        # codex（有工具，~4s）| llm（分类器，~0.9s）
+  engine: "llm"          # llm：分类器优先（~0.9s），失败才升级 codex | codex：全部走 codex（~4s）
   model: ""              # 留空用上面的 llm.model
   timeout_ms: 1500       # 超时按 ignore 处理，不能让语音卡住
   min_confidence: 0.6

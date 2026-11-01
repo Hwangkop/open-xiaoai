@@ -27,6 +27,7 @@ type playState struct {
 	// 音乐
 	music         bool
 	musicStart    time.Time
+	musicURL      string // 当前曲目地址，播报打断后靠它重新拉起
 	musicTracking bool
 	pendingURL    string
 	immediatePlay bool // 路由等"没有 AI 回复"的场景：点歌要立刻起播
@@ -103,10 +104,52 @@ func (s *Speaker) Speaking() bool {
 func (s *Speaker) markSpeaking(on bool) {
 	s.stMu.Lock()
 	s.st.speaking = on
+	musicOn := s.st.music
 	if !on {
-		s.st.speakingCool = time.Now().Add(700 * time.Millisecond)
+		s.st.speakingCool = time.Now().Add(1500 * time.Millisecond)
 	}
 	s.stMu.Unlock()
+
+	// 播报会抢占音频设备，musicplayer 被顶成暂停；说完把音乐接回去。
+	// 只在"播报前就在放音乐"时做，避免把用户已经停掉的歌重新放出来。
+	if !on && musicOn {
+		go s.resumeMusicAfterSpeech()
+	}
+}
+
+// resumeMusicAfterSpeech 播报结束后恢复音乐播放。
+// miplayer 播完会把 mediaplayer 顶成空闲（不是暂停），所以先试 resume，
+// 设备真的空了就把当前曲目重新拉开（从头发，设备不报位置，拿不到断点）。
+func (s *Speaker) resumeMusicAfterSpeech() {
+	time.Sleep(400 * time.Millisecond) // 等 miplayer 释放音频设备
+
+	s.stMu.Lock()
+	url := s.st.musicURL
+	s.stMu.Unlock()
+	if url == "" {
+		return
+	}
+
+	if res, err := s.runShell("ubus -t 2 call mediaplayer player_get_play_status", 3000); err == nil && res != nil {
+		switch mediaPlayerStatus(res.Stdout) {
+		case 1:
+			return // 还在放，什么都不用做
+		case 2:
+			if _, err := s.runShell(`ubus -t 3 call mediaplayer player_play_operation '{"action":"play","media":"common"}'`, 4000); err == nil {
+				log.Printf("🎵 播报结束，音乐继续")
+				return
+			}
+		}
+	}
+
+	if err := s.PlayURL(url, false); err != nil {
+		log.Printf("⚠️ 恢复音乐播放失败: %v", err)
+		return
+	}
+	s.stMu.Lock()
+	s.st.musicStart = time.Now()
+	s.stMu.Unlock()
+	log.Printf("🎵 播报结束，重新拉起当前曲目")
 }
 
 func (s *Speaker) StopTTS() error {
@@ -381,10 +424,10 @@ func (s *Speaker) PlayURL(url string, blocking bool) error {
 		// 音乐：不占用指示灯
 		s.HideThinkingLED()
 	}
-	// 播报期间屏蔽服务端唤醒的自听（没有 AEC，只能"自己说话时不听"）
-	s.markSpeaking(true)
-	defer s.markSpeaking(false)
 	if blocking {
+		// 播报期间屏蔽服务端唤醒的自听（没有 AEC，只能"自己说话时不听"）
+		s.markSpeaking(true)
+		defer s.markSpeaking(false)
 		script := fmt.Sprintf("miplayer -f '%s'", url)
 		_, err := s.runShell(script, 10*60*1000)
 		return err
@@ -830,6 +873,7 @@ func (s *Speaker) PlayMusicURL(url string) error {
 	}
 	s.stMu.Lock()
 	s.st.musicStart = time.Now()
+	s.st.musicURL = url
 	s.stMu.Unlock()
 	s.StartMusicTracking()
 	return nil
@@ -874,6 +918,11 @@ func (s *Speaker) trackMusic() {
 		s.stMu.Lock()
 		playing, startedAt := s.st.music, s.st.musicStart
 		s.stMu.Unlock()
+		// 播报期间设备本来就会停，别把这个当成"音乐结束了"
+		if s.Speaking() {
+			idle = 0
+			continue
+		}
 		if !playing || time.Now().After(deadline) || startedAt.IsZero() {
 			s.stMu.Lock()
 			s.st.music = false

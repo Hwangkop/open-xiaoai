@@ -128,11 +128,11 @@ func (a *adminServer) playSong(ctx context.Context, s netease.Song) (string, err
 	a.persistMusic()
 	log.Printf("🎵 播放: %s - %s", s.Name, s.Artists)
 
-	// 平时是"排进队列，等 AI 回复播完再起播"（避免和确认语重叠）；
-	// 但音乐态路由没有回复，没人来起播 → 这里必须自己放。
-	if a.speaker.ImmediatePlayActive() {
-		a.speaker.PlayPendingMusic()
-	}
+	// 直接起播，不再"排队等回复播完"：
+	// 那个设计在人一直说话的环境里几乎必然失败——一旦被打断，deferred 的
+	// PlayPendingMusic 会因为 ctx 取消而 ClearPendingMusic，歌就永远出不来了。
+	// 现在就放：确认语会短暂抢占，播完由 Speaker 自动接回。
+	a.speaker.PlayPendingMusic()
 	return fmt.Sprintf("正在播放《%s》- %s", s.Name, s.Artists), nil
 }
 
@@ -166,10 +166,11 @@ func (a *adminServer) searchAndPlay(ctx context.Context, query string) (string, 
 	if err != nil {
 		return "", err
 	}
-	// 点歌单曲时不把搜索结果当队列，清掉旧队列
+	// 用这次搜索的结果当队列：点一首歌之后说"下一首"能接着听同主题的，
+	// 而不是报"没有正在播放的歌单"（旧队列也不会被沿用）。
 	a.music.mu.Lock()
-	a.music.queue = nil
-	a.music.queueName = ""
+	a.music.queue = songs
+	a.music.queueName = "搜索：" + query
 	a.music.mu.Unlock()
 	s, err := a.playFromList(ctx, songs, 0)
 	if err != nil {

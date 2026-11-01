@@ -82,37 +82,58 @@ func (e *Engine) routeMusicText(text string, via string) bool {
 		// 路由期间没有 AI 回复，点歌必须立刻起播（状态由 Speaker 持有）
 		e.speaker.BeginImmediatePlay()
 		defer e.speaker.EndImmediatePlay()
-		// 路由这一轮 4~9 秒，灯也要亮着，否则用户以为没听见
+		// 这一轮最长几秒，灯也要亮着，否则用户以为没听见
 		e.speaker.ShowThinkingLED()
 		defer e.speaker.HideThinkingLED()
-		ctx, cancel := context.WithTimeout(context.Background(), routeTimeout)
-		defer cancel()
 		start := time.Now()
 
-		// 首选 codex 路由线程：它有真正的音乐工具，能直接办事
-		if e.codexRouter != nil && cfg.MusicRouter.Engine != "llm" {
-			action, err := e.codexRouter.Route(ctx, text, e.routeState())
-			if err == nil {
-				e.applyCodexRoute(ctx, text, action, via, time.Since(start).Milliseconds())
+		// 第一步：进程内工具路由（1 次 function calling，能调全部 MCP 工具，约 1 秒）。
+		// 这就是"常用指令也能调 MCP"的那条路——不需要为每个能力写分发分支。
+		if e.toolRun != nil && cfg.MusicRouter.Engine != "codex" {
+			tctx, tcancel := context.WithTimeout(context.Background(), 6*time.Second)
+			action, say, terr := e.decideWithTools(tctx, text, e.routeState())
+			tcancel()
+			if terr == nil {
+				e.applyCodexRoute(context.Background(), text, action, via, time.Since(start).Milliseconds(), say)
 				return
 			}
-			log.Printf("🧭 codex 路由失败，回退分类器 %q: %v", text, err)
+			log.Printf("🧭 工具路由失败，回退分类器 %q: %v", text, terr)
 		}
 
-		// 回退：纯 HTTP 分类器（没有工具，只能回 intent 由本地执行）。
-		// 用新的短超时，别被上面那个已经到期的 ctx 连累。
+		// 第二步（兜底）：轻量分类器，只回固定 intent，由本地执行。
 		fctx, fcancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer fcancel()
 		d, err := e.decideMusicIntent(fctx, text, song, artists, volume)
-		if err != nil {
-			log.Printf("🧭 路由失败，忽略 %q: %v", text, err)
+		fcancel()
+		if err == nil && !(cfg.MusicRouter.Engine == "codex" && d.Intent == string(musicIntentDialog)) {
+			e.applyMusicDecision(context.Background(), text, d, time.Since(start).Milliseconds(), via)
+			return
+		}
+
+		// 分类器失败（或显式配置 engine=codex 且判不准）：交给 codex 路由线程，
+		// 它有完整工具集，能处理分类器覆盖不到的操作。
+		if e.codexRouter != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), routeTimeout)
+			defer cancel()
+			if err != nil {
+				log.Printf("🧭 分类器失败，升级到 codex 路由 %q: %v", text, err)
+			}
+			action, say, rerr := e.codexRouter.Route(ctx, text, e.routeState())
+			if rerr == nil {
+				e.applyCodexRoute(ctx, text, action, via, time.Since(start).Milliseconds(), say)
+				return
+			}
+			log.Printf("🧭 codex 路由也失败，忽略 %q: %v", text, rerr)
 			recordRoute(routeEntry{
 				Text: text, Stage: "router", Result: "error",
 				LatencyMs: time.Since(start).Milliseconds(),
 			})
 			return
 		}
-		e.applyMusicDecision(ctx, text, d, time.Since(start).Milliseconds(), via)
+
+		if err != nil {
+			log.Printf("🧭 路由失败，忽略 %q: %v", text, err)
+			recordRoute(routeEntry{Text: text, Stage: "router", Result: "error", LatencyMs: time.Since(start).Milliseconds()})
+		}
 	}()
 	return true
 }
@@ -226,6 +247,15 @@ func (e *Engine) applyMusicDecision(ctx context.Context, text string, d musicDec
 		if msg, err := e.musicPlayQuery(ctx, d.Query); err == nil {
 			log.Printf("🎵 %s", msg)
 			record("executed")
+			// 点歌要有一句口头确认：放错了（比如"如愿"被听成"无愿"）能立刻听出来。
+			// 播报会短暂抢占音乐，播完由 Speaker 自动接回去。
+			if say := strings.TrimSpace(msg); say != "" && len([]rune(say)) <= 30 {
+				go func() {
+					if err := e.speaker.PlayTTS(say, true); err != nil {
+						log.Printf("⚠️ 点歌确认播报失败: %v", err)
+					}
+				}()
+			}
 		} else {
 			log.Printf("⚠️ 播放 %q 失败: %v", d.Query, err)
 			record("error")

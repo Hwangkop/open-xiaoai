@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	openai "github.com/sashabaranov/go-openai"
 )
 
 const adminMaxRequestBytes = 2 << 20
@@ -137,6 +139,11 @@ func newAdminServer(app *appRuntime) *adminServer {
 	// 音乐态语义路由（L4）：白名单/唤醒词/歌词都没拦住的句子才交给模型
 	if app.engine != nil {
 		app.engine.SetMusicRouting(a.musicDesc, a.searchAndPlay)
+		// 路由直接调用我们自己的 MCP 工具（不再需要为每个能力写分发分支）
+		tools := openAIToolsFromMCP(mcpToolList())
+		app.engine.SetToolAccess(func() []openai.Tool { return tools }, func(ctx context.Context, name string, args map[string]any) (string, error) {
+			return a.runMCPTool(ctx, mcpToolCall{Name: name, Arguments: args})
+		})
 	}
 	return a
 }

@@ -53,8 +53,13 @@ type Engine struct {
 	musicDesc      func() (song, artists string, volume int)
 	musicPlayQuery func(ctx context.Context, query string) (string, error)
 
-	// codexRouter 非空时，音乐态路由走 codex 的独立 thread（有真工具）
+	// codexRouter 非空时，音乐态路由可以升级到 codex 的独立 thread（完整工具集）
 	codexRouter *codexRouter
+
+	// 进程内工具路由的依赖（由管理端注入）：工具清单 + 执行器。
+	// 有了它，路由就能直接调用全部 MCP 工具，不必为每个能力写分发分支。
+	toolDefs func() []openai.Tool
+	toolRun  func(ctx context.Context, name string, args map[string]any) (string, error)
 
 	// wakeStore 用户自定义的唤醒词（管理台可编辑）
 	wakeStore *wakeStore
@@ -643,9 +648,14 @@ func (e *Engine) startMessage(text string, authorized bool) {
 	e.mu.Unlock()
 
 	stopTTS := func() {
-		// 先无条件停掉小爱自己的回复：noop 采集模式下固件的 ASR 和原生回复是同一套流程，
+		// 停掉小爱自己的回复：noop 采集模式下固件的 ASR 和原生回复是同一套流程，
 		// 我们只是旁路读识别结果，不主动停就会"小爱 + 豆包"两套声音叠着说。
-		if err := e.speaker.StopNativePlayback(); err != nil {
+		//
+		// 但音乐不能停：音乐也走 mediaplayer，一句无关的闲聊就把它掐掉太伤了。
+		// 音乐态下交给 miplayer 自己抢占设备，播报结束后由 Speaker 负责接回去。
+		if e.speaker.MusicPlaying() {
+			log.Println("🎵 音乐播放中，跳过停原生播放")
+		} else if err := e.speaker.StopNativePlayback(); err != nil {
 			log.Printf("⚠️ stop_native failed: %v", err)
 		}
 		if err := e.speaker.StopTTS(); err != nil {
@@ -755,6 +765,12 @@ func (e *Engine) SetCodexAppServer(s *CodexAppServer) {
 func (e *Engine) SetMusicControls(next func(context.Context) (string, error), stop func()) {
 	e.musicNext = next
 	e.musicStop = stop
+}
+
+// SetToolAccess 注入"路由可以直接调用的工具集"（复用 MCP 的工具定义与执行器）。
+func (e *Engine) SetToolAccess(defs func() []openai.Tool, run func(ctx context.Context, name string, args map[string]any) (string, error)) {
+	e.toolDefs = defs
+	e.toolRun = run
 }
 
 // SetMusicRouting 注入音乐态语义路由的依赖：

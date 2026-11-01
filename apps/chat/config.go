@@ -219,8 +219,8 @@ func (c HomeAssistantConfig) Enabled() bool {
 type MusicRouterConfig struct {
 	Enabled bool `yaml:"enabled"`
 	// Engine 路由用哪个：
-	//   codex = codex 独立线程（有真工具，能直接办事；一轮约 4s）
-	//   llm   = 轻量分类器（0.9s，只能回 intent 由本地执行）
+	//   llm   = 轻量分类器优先（0.9s），失败才升级到 codex 线程（默认）
+	//   codex = 全部交给 codex 独立线程（有真工具，但一轮约 4s）
 	Engine string `yaml:"engine"`
 	// Model 留空则用 llm.model。
 	Model string `yaml:"model"`
@@ -338,7 +338,7 @@ func defaultConfig() *AppConfig {
 		},
 		MusicRouter: MusicRouterConfig{
 			Enabled:       true,
-			Engine:        "codex",
+			Engine:        "llm",
 			TimeoutMs:     1500,
 			MinConfidence: 0.6,
 		},

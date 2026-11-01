@@ -296,12 +296,29 @@ func (a *adminServer) handleDebugRoute(w http.ResponseWriter, r *http.Request) {
 	song, artists, volume := a.musicDesc()
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	d, err := a.engine.decideMusicIntent(ctx, strings.TrimSpace(req.Text), song, artists, volume)
+	text := strings.TrimSpace(req.Text)
+
+	// 1) 工具路由（只问模型，不执行）
+	toolCalls, raw, terr := a.engine.previewToolRoute(ctx, text, "")
+	toolInfo := map[string]any{"error": ""}
+	if terr != nil {
+		toolInfo["error"] = terr.Error()
+	} else {
+		toolInfo["content"] = raw
+		var calls []map[string]any
+		for _, c := range toolCalls {
+			calls = append(calls, map[string]any{"name": c.Name, "arguments": c.Arguments})
+		}
+		toolInfo["calls"] = calls
+	}
+
+	// 2) 轻量分类器
+	d, err := a.engine.decideMusicIntent(ctx, text, song, artists, volume)
 	if err != nil {
-		writeAdminError(w, http.StatusBadGateway, err.Error())
+		writeAdminJSON(w, http.StatusOK, map[string]any{"tool_router": toolInfo, "classifier_error": err.Error()})
 		return
 	}
-	writeAdminJSON(w, http.StatusOK, d)
+	writeAdminJSON(w, http.StatusOK, map[string]any{"tool_router": toolInfo, "classifier": d})
 }
 
 // handleDebugLyric 诊断歌词比对：给一句话，返回它和当前歌曲歌词的接近程度。
