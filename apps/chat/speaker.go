@@ -590,6 +590,12 @@ const defaultMusicDuckVolume = 35
 // musicVolumeStep 语音"大点声/小声点"的步长。
 const musicVolumeStep = 10
 
+// voiceVolumeCeiling 音乐播放时语音调音量的上限。
+// 没有 AEC，音乐超过这个音量后麦克风会被自己盖住：实测音量 30 时噪声基线
+// 从 5~9k 涨到 18~20k，VAD 门槛（基线×2.2）高过说话峰值，连"豆包"都听不见。
+// 想听更响就用 App 或「小爱同学，音量调到 X」走原生（原生有回声消除）。
+const voiceVolumeCeiling = 25
+
 // musicDuckFile 降音量状态的落盘路径（和 config.yaml 同目录）。
 // 进程被 kill（部署/崩溃）时音量会停在 duck 值上，靠它下次连上设备后补一次还原。
 var musicDuckFile string
@@ -779,6 +785,17 @@ func (s *Speaker) AdjustMusicVolume(delta int) (int, int, error) {
 	}
 
 	next := cur + delta
+	// 音乐播放中（duck 状态）语音把音量往"聋区"推时最多到 25：
+	// 再高麦克风就听不见"小声点/停止"了。只在 duck 目标本身足够低时生效
+	// （正常配置 20）；如果用户把 duck 音量配到 25 以上，说明自愿放弃这层保护。
+	if delta > 0 && ducked && s.st.duckTarget <= voiceVolumeCeiling {
+		if cur >= voiceVolumeCeiling {
+			return cur, cur, nil
+		}
+		if next > voiceVolumeCeiling {
+			next = voiceVolumeCeiling
+		}
+	}
 	if next < 1 {
 		next = 1
 	}

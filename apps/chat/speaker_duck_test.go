@@ -521,3 +521,31 @@ func TestSetMusicMutedReportsActed(t *testing.T) {
 		t.Fatal("重复静音不该报告已处理")
 	}
 }
+
+// TestVoiceVolumeCeiling 音乐播放中语音调音量最多到 25：
+// 再高麦克风就被音乐盖住，连"小声点/停止"都听不见。
+func TestVoiceVolumeCeiling(t *testing.T) {
+	resetMusicDuck(t)
+	vol := 20
+	get, set, _ := fakeVolume(&vol)
+	s := NewSpeaker()
+	s.volumeGet, s.volumeSet = get, set
+	s.SetMusicDuck(true, 20)
+
+	s.DuckMusicVolume() // 20 → 20
+	if vol != 20 {
+		t.Fatalf("放歌音量 = %d, want 20", vol)
+	}
+	s.AdjustMusicVolume(musicVolumeStep) // 20 + 10 → 封顶 25
+	if vol != voiceVolumeCeiling {
+		t.Fatalf("第一次大声点 = %d, want %d", vol, voiceVolumeCeiling)
+	}
+	s.AdjustMusicVolume(musicVolumeStep) // 已到顶，不再加
+	if vol != voiceVolumeCeiling {
+		t.Fatalf("到顶后再大声点 = %d, want %d", vol, voiceVolumeCeiling)
+	}
+	s.AdjustMusicVolume(-musicVolumeStep) // 往下永远允许
+	if vol != voiceVolumeCeiling-musicVolumeStep {
+		t.Fatalf("小声点 = %d, want %d", vol, voiceVolumeCeiling-musicVolumeStep)
+	}
+}
