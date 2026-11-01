@@ -2,8 +2,6 @@
 
 可复用的本地音乐播放模块，目前由 [apps/chat](../../apps/chat/README.md) 集成。纯 Go 实现，无 ffmpeg 依赖，通过监听客户端上报的 `playing` 事件实现自动切歌。
 
-> ℹ️ **apps/gemini 不集成本模块**：apps/gemini 是纯实时对话场景（半双工），不会消费 `instruction` 事件。如需本地音乐能力请使用 apps/chat。
-
 ## 功能
 
 - **曲库索引**：递归扫描配置目录，使用 dhowden/tag 提取元数据（歌名/歌手/专辑）

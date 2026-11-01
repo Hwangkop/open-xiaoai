@@ -33,7 +33,7 @@ chmod +x /data/open-xiaoai/client
 # 多地址：按顺序尝试，支持 LAN + Tailscale 等场景（在家用 LAN，带回老家用 Tailscale）
 /data/open-xiaoai/client ws://192.168.1.100:4399 ws://my-server:4399
 
-# 切换模式：apps/gemini 与 apps/chat 语音切换
+# 切换模式：在两套 Server 之间语音切换
 /data/open-xiaoai/client -switch ws://你的IP:4399 ws://你的IP:4400
 
 # 若服务端启用了认证，在 URL 中携带用户名和密码：
@@ -92,7 +92,7 @@ reboot
 ```
 
 > [!IMPORTANT]
-> 先运行 Server 端（如 apps/chat、apps/gemini）获取地址，再启动 Client。不要连接来路不明的 server 🚨
+> 先运行 Server 端（如 apps/chat）获取地址，再启动 Client。不要连接来路不明的 server 🚨
 
 ## 编译
 
@@ -149,12 +149,12 @@ chmod +x /data/open-xiaoai/client
 
 适用于：音箱在家连局域网，带回老家后通过 Tailscale 连接。Server 会根据客户端连接方式返回对应的音乐 URL，详见 [connection-aware-base-url-design](../../docs/connection-aware-base-url-design.md)。
 
-### 切换模式：apps/gemini / apps/chat 语音切换
+### 切换模式：在两套 Server 之间语音切换
 
-传 `-switch` 时，多地址用于不同 Server（如 apps/gemini 与 apps/chat），说切换词即可切换：
+传 `-switch` 时，多地址用于不同 Server（如家里和异地各一套 apps/chat），说切换词即可切换：
 
 ```shell
-# apps/gemini 默认 4399，apps/chat 需配置为 4400
+# 两个 Server 用不同端口（例如 4399 / 4400）
 ./client -switch ws://你的IP:4399 ws://你的IP:4400
 ```
 
@@ -171,7 +171,7 @@ chmod +x /data/open-xiaoai/client
 
 ## 认证
 
-若服务端（apps/chat / apps/gemini）启用了认证（`auth.users` 非空），客户端需在连接 URL 中携带有效凭据：
+若服务端（apps/chat）启用了认证（`auth.users` 非空），客户端需在连接 URL 中携带有效凭据：
 
 ```
 ws://server地址:4399?username=alice&password=password123

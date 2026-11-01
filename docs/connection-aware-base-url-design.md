@@ -6,7 +6,7 @@
 
 ## 一、OnConnectionHost 为何「看起来没作用」？
 
-**apps/gemini / apps/chat 已集成 pkg/music**。当 `music.enabled: true` 时，`startServer` 传入非 nil 的 `OnConnectionHost` 回调，每次连接建立时会调用：
+**apps/chat 已集成 pkg/music**。当 `music.enabled: true` 时，`startServer` 传入非 nil 的 `OnConnectionHost` 回调，每次连接建立时会调用：
 
 ```go
 onConnectionHost := func(host string) {
@@ -69,7 +69,7 @@ CreateFileURL 使用该 base_url 生成 URL
 | 组件 | 改动 |
 |------|------|
 | **pkg/music** | 新增 `SetBaseURLForConnection(host string)`，按连接动态设置 base_url |
-| **apps/gemini / apps/chat** | `handleConnection` 传入 `r`，在 `initConnection` 中根据 `r.Host` 计算并设置 base_url |
+| **apps/chat** | `handleConnection` 传入 `r`，在 `initConnection` 中根据 `r.Host` 计算并设置 base_url |
 | **apps/client** | 支持多地址连接：先试 LAN，失败再试 Tailscale |
 
 ---
@@ -97,7 +97,7 @@ func (m *Module) SetBaseURLForConnection(host string)
 - 已有 `SetBaseURL`，可直接复用
 - `SetBaseURLForConnection` 内部调用 `fileSrv.SetBaseURL("http://" + host + ":port")`
 
-### 5.2 apps/gemini / apps/chat
+### 5.2 apps/chat
 
 **handleConnection 签名**：
 
@@ -189,15 +189,15 @@ for each url in server_urls:
 | 阶段 | 内容 |
 |------|------|
 | 1 | pkg/music: `SetBaseURLForConnection(host string)` ✅ |
-| 2 | apps/gemini / apps/chat: 传入 `r`，在 initConnection 中设置 base_url ✅ |
+| 2 | apps/chat: 传入 `r`，在 initConnection 中设置 base_url ✅ |
 | 3 | apps/client: 支持多 server URL 按序尝试 ✅ |
 
 ## 八、集成 music 时
 
-当 apps/gemini 或 apps/chat 集成 pkg/music 时，在 main 中传入回调即可：
+当 apps/chat 集成 pkg/music 时，在 main 中传入回调即可：
 
 ```go
-// apps/gemini main.go
+// apps/chat main.go
 var musicModule *music.Module
 if cfg.Music.Enabled {
     musicModule = music.New(&cfg.Music)

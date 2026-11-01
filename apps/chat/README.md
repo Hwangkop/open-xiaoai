@@ -1,8 +1,8 @@
 # Open-XiaoAI x Chat (Go)
 
-**文本流式 + TTS**：小爱音箱接入 OpenAI 兼容 API 的 Go Server，单二进制部署。
+**小爱音箱的 AI Server**：单 Go 二进制，自带管理台、MCP 工具与音乐态语音控制。
 
-支持 **GPT、Claude、DeepSeek、通义千问** 等（文本流式 + TTS 播放）。与 apps/gemini 的实时音频不同，apps/chat 为文本流式 + TTS 模式，可完美打断小爱回复，响应延迟低。Claude 可通过 [OpenRouter](https://openrouter.ai) 使用。
+对话后端可切换：**codex**（常驻 app-server，可调 MCP 工具）、**豆包网页直连**（免费、带联网）、或任意 **OpenAI 兼容 API**（GPT / Claude / DeepSeek / 通义千问）。回复走文本流式 + TTS，可随时打断。
 
 ## 功能
 
@@ -12,7 +12,50 @@
 - **对话历史**：可配置的上下文长度
 - **自定义回复**：通过配置文件设置固定回复（文字/音频链接）
 - **中断机制**：新消息到来时自动取消正在进行的 AI 回复
-- **Web 管理页**：浏览器在线编辑 `config.yaml`，并发送文字到音箱测试 TTS
+- **MCP 工具**：内置 21 个工具（音乐 / 播报 / 定时任务 / 家电 / 搜索），供对话后端直接调用
+- **音乐态语音控制**：放歌时说「下一首」「停下」「大点声」不用喊唤醒词
+- **语音态路由**：带唤醒词的话先在工具路由 / 分类器 / codex 之间分流，判成动作就直接执行
+- **Web 管理页**：配置、唤醒词、路由漏斗、智能体上下文、TTS 试播
+
+## 对话后端
+
+配置项 `chat.provider`：
+
+| 取值 | 说明 |
+|---|---|
+| `codex`（推荐） | 常驻 `codex app-server`（JSON-RPC），**能调用 MCP 工具**：放音乐、设提醒、控家电、联网搜索。会话落盘，重启可恢复；一个进程里可开多条 thread（主对话 / 音乐路由 / 定时任务），上下文互不干扰。 |
+| `doubao_web` | 豆包网页版直连，免费、自带联网搜索，但没有工具调用。 |
+| `llm` | 任意 OpenAI 兼容接口（GPT / Claude / DeepSeek / 通义千问），可控性最强。 |
+
+codex 的相关配置在 `codex.bin` / `codex.workspace` / `codex.codex_home`：`CODEX_HOME` 里放 `config.toml`（模型供应商 + MCP server 指向本服务的 `/mcp`）与 `models.json`。
+
+## MCP 工具
+
+本服务在 `/mcp` 暴露 21 个工具（只监听 127.0.0.1，给同机的 codex 用）：
+
+- **音乐**：`play_music` `search_music` `play_playlist` `play_daily` `list_playlists` `next_music` `stop_music` `set_volume`
+- **播报**：`speak`
+- **定时任务**：`create_task` `list_tasks` `update_task` `set_task_enabled` `run_task` `stop_task` `delete_task`
+- **家电**：`list_devices` `control_device`（走 Home Assistant）
+- **信息**：`web_search` `get_time` `end_conversation`
+
+对话链路里写死的分支越来越少：音乐态的"工具路由"是**一次 function calling**，模型直接从这 21 个工具里选，选完由同一套 `runMCPTool` 执行。
+
+## 音乐态
+
+放音乐时麦克风持续收到歌词，所以判定分四层（实现见 `voice_decide.go`，纯函数、可测试）：
+
+1. **本地白名单**（免唤醒）：`下一首 / 停下 / 安静 / 大点声 / 小点声 / 静音`——要求"基本就是这句指令"
+2. **带唤醒词** → 交给路由
+3. **无唤醒词但含动作词**（换 / 放 / 听 / 播 / 收藏）→ 交给路由
+4. 其余一律丢弃，不调模型
+
+路由本身也是三层的：**进程内工具路由**（约 1.8s，能调全部 MCP 工具）→ **轻量分类器**（约 0.6s，固定 intent）→ **codex 路由线程**（兜底）。判成动作就直接执行，判成对话才交给主助手。
+
+另外两个配套行为：
+
+- **降音量**：起播前把音量压到 `music_duck.volume`（默认 35），停播还原；用户手动调过就不覆盖。
+- **指示灯**：只在"这句话要交给路由或主助手"时点亮，噪声不亮，最后一次活动后自动熄灭。
 
 ## 快速开始
 
@@ -47,7 +90,7 @@ bash build.sh   # 产物在 dist/chat
 # Windows x86_64
 just build-chat windows amd64     # 产物：dist/chat_windows_amd64.exe
 
-# 同时构建 chat + gemini 的 Windows 版
+# 构建 Windows 版
 just build-windows
 
 # 其他平台同理，例如 Linux arm64
@@ -94,7 +137,7 @@ llm:
 # 指定配置文件
 ./chat -config /path/to/config.yaml
 
-# 与 apps/gemini 同时运行：将 apps/chat 改为 4400 端口（config.yaml 中 server.port: 4400）
+# 跑两套 Server（如家里 + 异地）：把其中一个改成 4400 端口（config.yaml 中 server.port: 4400）
 # 音箱上 client 使用切换模式：./client -switch ws://IP:4399 ws://IP:4400
 ```
 
@@ -142,6 +185,9 @@ cors:
 - 在 TTS 文本框输入一段话，发送到已连接的小爱音箱播放
 - **豆包扫码登录**：登录过期时点一下「扫码登录」，弹出二维码，用豆包 App 扫一下就完成续期
 - **豆包会话记录**：列出最近的豆包对话，点击查看消息记录
+- **唤醒与识别**：管理自定义唤醒词、在线测试一句话能不能唤醒、切换识别引擎、查看最近识别结果
+- **音乐态路由**：每句话走到哪一层（白名单 / 歌词 / 路由 / 丢弃）、路由器判成什么、置信度与耗时
+- **智能体**：主对话 / 音乐路由 / 定时任务三条 codex 会话的上下文管理（压缩、新开会话）
 
 `server.host` / `server.port`、`llm.*`、`proxy` 这类会影响监听地址或 LLM client 构造的配置，保存后会写入文件，但需要重启 `chat` 后完全生效。
 
@@ -175,6 +221,33 @@ cors:
 - 这是只读能力，不会修改任何豆包数据
 
 ## 配置说明
+
+与语音/音乐相关的几块配置：
+
+```yaml
+chat:
+  provider: "codex"     # codex | doubao_web | llm
+
+codex:
+  bin: "codex"
+  workspace: "/path/to/empty-dir"     # 别让模型看到项目文件
+  codex_home: "~/.codex-deepseek"     # 里面放 config.toml + models.json
+  timeout_seconds: 60
+
+# 放音乐时自动降音量（让麦克风听得清人声）
+music_duck:
+  enabled: true
+  volume: 35
+
+# 音乐态语义路由
+music_router:
+  enabled: true
+  engine: "llm"          # llm：分类器/工具路由优先；codex：全部走 codex 线程
+  timeout_ms: 1500
+  min_confidence: 0.6
+  prompt: ""             # 留空用内置提示词
+```
+
 
 | 配置项 | 说明 |
 |--------|------|

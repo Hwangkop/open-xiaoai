@@ -25,7 +25,7 @@
 ### 1.1 目标
 
 - **独立模块**：`pkg/music` 作为可复用包
-- **配置驱动**：在 apps/chat / apps/gemini 的 config 中增加 `music` 配置块即可启用
+- **配置驱动**：在 apps/chat 的 config 中增加 `music` 配置块即可启用
 - **静态 HTTP 服务**：将本地音乐目录映射为局域网 URL，供音箱拉取
 - **自动切歌**：基于客户端上报的 `playing` 事件，监听 `Playing → Idle` 触发下一首
 
@@ -343,7 +343,7 @@ playing 事件 status == "Paused":
 | 3 | commands 解析、instruction 处理、队列管理 |
 | 4 | playing 事件、Idle 自动切歌 |
 | 5 | 定时刷新循环 |
-| 6 | apps/chat / apps/gemini 集成与联调 |
+| 6 | apps/chat 集成与联调 |
 
 ---
 
@@ -358,7 +358,7 @@ require (
 )
 ```
 
-apps/chat / apps/gemini 增加 `require pkg/music` 及 `replace` 指向 `../../pkg/music`。
+apps/chat 增加 `require pkg/music` 及 `replace` 指向 `../../pkg/music`。
 
 ---
 
