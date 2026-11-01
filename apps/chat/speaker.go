@@ -1024,11 +1024,11 @@ func (s *Speaker) trackMusic() {
 		if idle < musicEndIdleTicks {
 			continue
 		}
-		// 只有设备"空闲"才算自然播完；暂停（物理按键）不自动切歌，照旧按停止处理
-		if status == 0 {
+		// 设备“播完”实测是 status=3（不是 0）；0 是空闲。
+		// 两种都算自然结束，交给队列接下一首；2=暂停（物理按键）不自动切。
+		if status == 0 || status == 3 {
 			if next := s.musicEndedHandler(); next != nil && next() {
 				idle = 0
-				log.Printf("🎵 自动续播下一首")
 				continue
 			}
 		}
@@ -1036,12 +1036,12 @@ func (s *Speaker) trackMusic() {
 		s.st.music = false
 		s.st.musicStart = time.Time{}
 		s.stMu.Unlock()
-		log.Printf("🎵 音乐已停止")
+		log.Printf("🎵 音乐已停止（status=%d）", status)
 		return
 	}
 }
 
-// mediaPlayerStatus 解析 player_get_play_status：0 空闲 / 1 播放 / 2 暂停，-1 解析失败。
+// mediaPlayerStatus 解析 player_get_play_status：0 空闲 / 1 播放 / 2 暂停 / 3 播完，-1 解析失败。
 func mediaPlayerStatus(out string) int {
 	info, ok := mediaPlayerInfo(out)
 	if !ok {
