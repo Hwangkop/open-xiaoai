@@ -212,7 +212,7 @@ music:
 
 - **刷机**：Windows 下用 Amlogic 工具刷 `root-patched.squashfs`（含 `libusb0.dll`、驱动、CRLF 等实测坑）
 - **音箱端**：client 目录结构、`server.txt` 参数顺序、升级三件套、麦克风上行参数
-- **chat 服务**：Windows 交叉编译、`taskkill → 覆盖 → schtasks` 发布顺序、计划任务与防火墙
+- **chat 服务**：macOS 本机部署（launchd 常驻）、Windows 交叉编译与 `taskkill → 覆盖 → schtasks` 发布顺序、计划任务与防火墙
 - **ASR**：sherpa-onnx + SenseVoice / Paraformer 模型部署、唤醒与对话识别分开配置
 - **Home Assistant**：Hyper-V 跑 HAOS、镜像拉取加速、端口改回 8123、Xiaomi Home 集成与长期令牌
 - **账号登录**：豆包 / 网易云扫码登录，令牌与会话文件的存放位置

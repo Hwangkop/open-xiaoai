@@ -219,6 +219,91 @@ default_tools_approval_mode = "approve"
 MCP 服务端由 chat 自己提供（`/mcp`，仅本机）。工具：音乐 7 个、播报、定时任务 7 个、家电 2 个、搜索、时间、结束对话。
 `prompt.system` 是在 `thread/start` 时作为 `baseInstructions` 传给 codex 的，**改完必须重启服务**才会新建 thread 生效。
 
+### 3.6 macOS 部署（最简单）
+
+macOS 只跑服务端，不参与刷机（刷机必须用 Windows）。Apple Silicon / Intel 都可以，ASR 走 CPU。
+
+依赖：Go 1.27+、Node + pnpm、Python 3.10+。
+
+```bash
+# 1) 编译服务端
+cd <repo>/apps/chat
+go build -o chat .
+
+# 2) 准备部署目录（config 与 web 放同一层）
+mkdir -p ~/open-xiaoai/web
+cp chat ~/open-xiaoai/
+cp config.yaml ~/open-xiaoai/
+cp -r web/dist/* ~/open-xiaoai/web/          # 管理台静态文件
+
+# 3) 启动
+cd ~/open-xiaoai
+./chat -config ~/open-xiaoai/config.yaml
+```
+
+`config.yaml` 里需要改成本机绝对路径（**相对路径会失效**）：
+
+```yaml
+server:
+  host: "0.0.0.0"
+  port: 4399
+
+asr:
+  enabled: true
+  python: "/Users/<you>/.venvs/sherpa/bin/python"
+  script: "/Users/<you>/open-xiaoai/tools/asr-worker/asr_worker.py"
+  model_dir: "/Users/<you>/open-xiaoai/models/sensevoice"
+  alt_model_dir: "/Users/<you>/open-xiaoai/models/paraformer"
+```
+
+ASR 环境（模型文件要求见第 4 节）：
+
+```bash
+python3 -m venv ~/.venvs/sherpa
+~/.venvs/sherpa/bin/pip install -U sherpa-onnx numpy
+
+# SenseVoice int8：model.int8.onnx + tokens.txt  → models/sensevoice/
+# Paraformer：model.onnx + tokens.txt             → models/paraformer/
+# 模型可从 HuggingFace 下载；国内可用 hf-mirror.com 镜像
+```
+
+常驻运行建议用 launchd（用户级，开机自启）：
+
+```xml
+<!-- ~/Library/LaunchAgents/com.openxiaoai.chat.plist -->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.openxiaoai.chat</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/&lt;you&gt;/open-xiaoai/chat</string>
+    <string>-config</string>
+    <string>/Users/&lt;you&gt;/open-xiaoai/config.yaml</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/&lt;you&gt;/open-xiaoai</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/Users/&lt;you&gt;/open-xiaoai/chat.log</string>
+  <key>StandardErrorPath</key><string>/Users/&lt;you&gt;/open-xiaoai/chat.log</string>
+</dict>
+</plist>
+```
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.openxiaoai.chat.plist
+# 或者旧写法：launchctl load -w ~/Library/LaunchAgents/com.openxiaoai.chat.plist
+```
+
+其它注意事项：
+
+- 音箱的 `server.txt` 指向 Mac 的局域网地址：`-mic-stream ws://<mac-lan-ip>:4399`；
+- macOS 防火墙弹窗要允许 `chat` 接受传入连接；
+- Mac 睡眠会断连，建议关闭休眠或用 `caffeinate -dimsu` 包一层；
+- macOS 能解析 `homeassistant.local`，Home Assistant 的 `base_url` 可以直接写 mDNS 名（Windows 则需要 IP）；
+- 豆包 / 网易云登录态、`config.yaml` 都在部署目录，**不要提交**。
+
 ---
 
 ## 4. ASR 模型部署
