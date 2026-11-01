@@ -11,6 +11,14 @@ func FreezeNativePlayback() (int, error) {
 	return 0, fmt.Errorf("冻结原生播放器仅支持 linux")
 }
 
+func FreezeProcess(string) (int, error) {
+	return 0, fmt.Errorf("冻结进程仅支持 linux")
+}
+
 func UnfreezeNativePlayback(int) error {
 	return fmt.Errorf("解冻原生播放器仅支持 linux")
+}
+
+func UnfreezeProcess(string) error {
+	return fmt.Errorf("解冻进程仅支持 linux")
 }
