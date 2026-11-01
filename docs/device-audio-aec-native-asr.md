@@ -567,3 +567,21 @@ $ 遍历 /proc/*/fd 找 pcmC0D2p
 ### 12.5 结论
 
 语音宿主与 `mediaplayer` 的音乐播放存在设备级互斥，暂不启用；默认仍是第 11 节的冻结方案。代码在 `feature/speech-host` 分支，OpenSpec 提案为 `native-speech-socket-takeover`。
+
+## 13. 音量分层（实测）
+
+这台设备的音量不是一个值，而是三层叠出来的：
+
+| 层 | 控制方式 | 影响谁 | 实测 |
+|---|---|---|---|
+| `Master` | `amixer -c 0 sset Master` | 全部 | 16 / 100% |
+| `mysoftvol` | `amixer -c 0 sset mysoftvol`（0-255） | 走 `pcm.Playback` 的客户端 | 80 → 31%，255 → 100% |
+| `mediaplayer` 自己的 volume | `ubus ... player_set_volume`（0-100） | 音乐、原生 TTS | ducking 压到 20 |
+
+关键结论：
+
+- 我们的 TTS 走 `miplayer`，会经过 `mysoftvol`。所以 **TTS 的响度上限是 `mysoftvol`**，跟播放器那个 20 无关。
+- `mysoftvol` 停在 80（31%）时，TTS 听起来明显偏小；拉到 255（100%）后立刻正常。
+- ducking 压的是播放器自己的 volume（20），音乐变小、TTS 不变——这也是 ducking 能工作的原因。
+
+要让 TTS 和音乐各自独立控制，得让 TTS 绕开 `mysoftvol`（换 PCM 设备）或者播放前临时抬高、播完还原。目前的做法是把 `mysoftvol` 拉满，音乐再靠播放器自己的音量压住。
