@@ -5,6 +5,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -384,4 +386,55 @@ func (a *adminServer) handleTTSVoices(w http.ResponseWriter, r *http.Request) {
 			{"id": "neutral", "label": "中性"},
 		},
 	})
+}
+
+// handleTTSProbe 逐一合成"同一句话 + 不同情绪"，比对音频字节是否真的不同。
+// 用来验证 emotion 参数在这个通道上到底生不生效（只允许本机）。
+func (a *adminServer) handleTTSProbe(w http.ResponseWriter, r *http.Request) {
+	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if host != "127.0.0.1" && host != "::1" && host != "::ffff:127.0.0.1" {
+		http.Error(w, "只允许本机访问", http.StatusForbidden)
+		return
+	}
+	var req struct {
+		Text     string   `json:"text"`
+		Speaker  string   `json:"speaker"`
+		Emotions []string `json:"emotions"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
+		writeAdminError(w, http.StatusBadRequest, "需要 text")
+		return
+	}
+	tts := a.speaker.doubaoTTSInstance()
+	if tts == nil {
+		writeAdminError(w, http.StatusServiceUnavailable, "未启用豆包语音合成")
+		return
+	}
+	if len(req.Emotions) == 0 {
+		req.Emotions = []string{"", "happy", "sad", "angry"}
+	}
+
+	type probe struct {
+		Emotion string `json:"emotion"`
+		Bytes   int    `json:"bytes"`
+		SHA     string `json:"sha"`
+		Ms      int64  `json:"ms"`
+		Error   string `json:"error,omitempty"`
+	}
+	var out []probe
+	for _, emo := range req.Emotions {
+		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+		start := time.Now()
+		audio, err := tts.WithVoice(req.Speaker, emo).synthesizeWS(ctx, req.Text)
+		cancel()
+		p := probe{Emotion: emo, Bytes: len(audio), Ms: time.Since(start).Milliseconds()}
+		if err != nil {
+			p.Error = err.Error()
+		} else {
+			sum := sha256.Sum256(audio)
+			p.SHA = hex.EncodeToString(sum[:8])
+		}
+		out = append(out, p)
+	}
+	writeAdminJSON(w, http.StatusOK, map[string]any{"text": req.Text, "results": out})
 }

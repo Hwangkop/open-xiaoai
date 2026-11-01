@@ -136,7 +136,9 @@ tts:
   format: "mp3"          # mp3 / ogg_opus / pcm / wav
   bit_rate: 32000
   sample_rate: 24000
-  speech_rate: 1.0       # 语速，1.0 正常，>1 更快
+  speech_rate: 1.0
+  # 情绪：happy / sad / angry / surprised / neutral，留空用音色自带情绪
+  emotion: ""       # 语速，1.0 正常，>1 更快
   pitch: 0.0             # 音调，0 正常
 
 # 打断配置：仅当关键词或唤醒词匹配时才打断

@@ -69,6 +69,9 @@ type TTSConfig struct {
 	SampleRate int    `yaml:"sample_rate"`
 	// 语速倍率，1.0 为正常，>1 更快
 	SpeechRate float64 `yaml:"speech_rate"`
+	// Emotion 情绪（部分音色支持）：happy / sad / angry / surprised / neutral，
+	// 留空用音色默认情绪。实测同一句话不同情绪音频明显不同。
+	Emotion string `yaml:"emotion"`
 	// 音调，0 为正常，范围约 -1.0 ~ 1.0
 	Pitch float64 `yaml:"pitch"`
 }

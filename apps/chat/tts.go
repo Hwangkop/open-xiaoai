@@ -89,6 +89,7 @@ func NewDoubaoTTS(cfg TTSConfig) *DoubaoTTS {
 	}
 	dir := defaultTTSDir()
 	return &DoubaoTTS{
+		emotion:    strings.TrimSpace(cfg.Emotion),
 		speaker:    speaker,
 		format:     format,
 		bitRate:    bitRate,
@@ -153,8 +154,9 @@ func (t *DoubaoTTS) Synthesize(ctx context.Context, text string) (string, error)
 }
 
 func (t *DoubaoTTS) cacheName(text string) string {
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%d|%d|%.2f|%.2f|%s",
-		t.speaker, t.format, t.bitRate, t.sampleRate, t.speechRate, t.pitch, text)))
+	// emotion 也要进 key，否则不同情绪会命中同一份缓存
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%s|%d|%d|%.2f|%.2f|%s",
+		t.speaker, t.emotion, t.format, t.bitRate, t.sampleRate, t.speechRate, t.pitch, text)))
 	return hex.EncodeToString(sum[:16]) + "." + t.format
 }
 
