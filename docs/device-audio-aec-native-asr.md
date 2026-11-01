@@ -549,6 +549,8 @@ $ 遍历 /proc/*/fd 找 pcmC0D2p
 
 表现就是"假播放"：`player_get_play_status` 返回 `status=1`，但进程一个 `/dev/snd` 句柄都没有，音乐无声；恢复时只能重拉 URL，于是从头播放。
 
+另一个代价：宿主模式下麦克风只有 mips 在开，而它只认「小爱同学」。client 同时会关掉 `arecord`（`-mic-stream` 与 `-speech-host` 互斥），所以**「豆包豆豆」这类本地唤醒词会完全失效**，只剩小爱同学一个入口。
+
 ### 12.3 试过但无效
 
 - `dmix`：`/etc/asound.conf` 里的 `dmixer` 抢不到 `hw:0,2`（`Unknown slave PCM hw:0,2`），说明 mediaplayer 是独占打开的。
