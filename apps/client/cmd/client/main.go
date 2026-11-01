@@ -469,7 +469,16 @@ func finishNativeDialog(_ connect.Request) (connect.Response, error) {
 // freezeNative 冻结固件原生播放器（mediaplayer）。
 // 原生 TTS 和音乐都走它；我们自己的 TTS 走 miplayer，不受影响。
 func freezeNative(req connect.Request) (connect.Response, error) {
-	pid, err := utils.FreezeNativePlayback()
+	name := utils.NativePlayerName
+	if req.Payload != nil {
+		var p struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(*req.Payload, &p); err == nil && p.Name != "" {
+			name = p.Name
+		}
+	}
+	pid, err := utils.FreezeProcess(name)
 	if err != nil {
 		log.Printf("❄️ [rpc] freeze_native 失败 (id=%s): %v", req.ID, err)
 		return connect.ErrorResponse(req.ID, err), nil
@@ -482,14 +491,23 @@ func freezeNative(req connect.Request) (connect.Response, error) {
 // unfreezeNative 解冻 mediaplayer。payload 可选 {"pid": N}，不传就按进程名查找。
 func unfreezeNative(req connect.Request) (connect.Response, error) {
 	pid := 0
+	name := ""
 	if req.Payload != nil {
 		var p struct {
-			PID int `json:"pid"`
+			PID  int    `json:"pid"`
+			Name string `json:"name"`
 		}
 		_ = json.Unmarshal(*req.Payload, &p)
 		pid = p.PID
+		name = p.Name
 	}
-	if err := utils.UnfreezeNativePlayback(pid); err != nil {
+	var err error
+	if name != "" {
+		err = utils.UnfreezeProcess(name)
+	} else {
+		err = utils.UnfreezeNativePlayback(pid)
+	}
+	if err != nil {
 		log.Printf("☀️ [rpc] unfreeze_native 失败 (id=%s): %v", req.ID, err)
 		return connect.ErrorResponse(req.ID, err), nil
 	}
@@ -498,8 +516,17 @@ func unfreezeNative(req connect.Request) (connect.Response, error) {
 }
 
 // nativePlaybackState 查询 mediaplayer 的 pid 与冻结状态，供服务端复核。
-func nativePlaybackState(_ connect.Request) (connect.Response, error) {
-	pid, stopped := utils.NativePlaybackState()
+func nativePlaybackState(req connect.Request) (connect.Response, error) {
+	name := utils.NativePlayerName
+	if req.Payload != nil {
+		var p struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(*req.Payload, &p); err == nil && p.Name != "" {
+			name = p.Name
+		}
+	}
+	pid, stopped := utils.NativeProcessState(name)
 	data, _ := json.Marshal(map[string]any{"pid": pid, "stopped": stopped, "running": pid > 0})
 	return connect.DataResponse(json.RawMessage(data)), nil
 }

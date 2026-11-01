@@ -617,24 +617,23 @@ func (s *Speaker) PlayURL(url string, blocking bool) error {
 		s.HideThinkingLED()
 	}
 	if blocking {
-		// 播报前把音乐暂停（不是停止）：播放器自己保存位置，
-		// miplayer 抢设备也不会把会话弄死，播完 play 就能接着放。
-		if s.MusicPlaying() {
-			out, err := s.runShell(`mphelper pause`, 3000)
-			if err != nil {
-				log.Printf("⚠️ 播报前暂停音乐失败: %v", err)
-			} else {
-				stdout := ""
-				if out != nil {
-					stdout = strings.TrimSpace(out.Stdout)
-				}
-				log.Printf("⏸️ 播报前暂停音乐（保留播放位置）: %s", stdout)
-			}
+		// TTS 走 aplay 的 dmix（.wav）时不需要暂停音乐；
+		// 只有在 mp3/miplayer 路径下才需要给播放器让位。
+		if s.MusicPlaying() && !strings.HasSuffix(url, ".wav") {
+			_, _ = s.runShell(`mphelper pause`, 3000)
+			log.Printf("⏸️ 播报前暂停音乐（mp3 播放路径）")
 		}
 		// 播报期间屏蔽服务端唤醒的自听（没有 AEC，只能"自己说话时不听"）
 		s.markSpeaking(true)
 		defer s.markSpeaking(false)
-		script := fmt.Sprintf("miplayer -f '%s'", url)
+		// WAV 走 aplay 的 dmix 设备（Playback）：和 mediaplayer 混音，
+		// 音乐不会被打断、位置不丢。mp3 仍走 miplayer（它只认默认设备）。
+		var script string
+		if strings.HasSuffix(strings.ToLower(strings.SplitN(url, "?", 2)[0]), ".wav") {
+			script = fmt.Sprintf("wget -q -O - '%s' | aplay -D Playback -", url)
+		} else {
+			script = fmt.Sprintf("miplayer -f '%s'", url)
+		}
 		_, err := s.runShell(script, 10*60*1000)
 		return err
 	}

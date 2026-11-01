@@ -27,6 +27,10 @@ const (
 
 var nativeTakeoverRPCTimeoutMs uint64 = 3000
 
+// nativeTakeoverProcess 冻结谁：冻 aivs 让它生成不了回答，播放器不动，
+// 音乐可以一直放（我们的 TTS 走 aplay 的 dmix，和音乐混音）。
+const nativeTakeoverProcess = "mico_aivs_lab"
+
 type nativeTakeoverState struct {
 	mu       sync.Mutex
 	active   bool
@@ -108,13 +112,9 @@ func (s *Speaker) EndNativeTakeover(reason string) {
 	t.mu.Unlock()
 
 	// 按进程名解冻：冻结期间 mediaplayer 可能被守护进程重启，存的 pid 会过期
-	log.Printf("☀️ 原生唤醒接管结束（%s）：清理原生播放器(pid=%d)", reason, pid)
-	// 杀掉被冻住的播放器清空队列（解冻再 stop 会晚一拍，小爱会冒一声）
-	if s.nativeReset != nil {
-		go s.nativeReset(musicOn)
-	} else {
-		go s.resetPlaybackAfterTakeover(musicOn)
-	}
+	// 只解冻 aivs；播放器全程没动，音乐自己继续，不需要清队列或重拉
+	_ = s.unfreezeNative(0)
+	log.Printf("☀️ 原生唤醒接管结束（%s）：已解冻 %s(pid=%d)，music=%v", reason, nativeTakeoverProcess, pid, musicOn)
 }
 
 // watchNativeTakeover 在冻结期间盯着播放器：被外部解冻就补一刀，进程没了就结束接管。
@@ -257,7 +257,7 @@ func (s *Speaker) nativePlayerState() (int, bool, error) {
 
 // freezeNativePlayerRPC 让客户端冻结 mediaplayer，返回它的 pid。
 func (s *Speaker) freezeNativePlayerRPC() (int, error) {
-	resp, err := connect.GetRPC().CallRemote("freeze_native", nil, &nativeTakeoverRPCTimeoutMs)
+	resp, err := connect.GetRPC().CallRemote("freeze_native", map[string]string{"name": nativeTakeoverProcess}, &nativeTakeoverRPCTimeoutMs)
 	if err != nil {
 		return 0, fmt.Errorf("freeze_native 调用失败: %w", err)
 	}
@@ -275,7 +275,7 @@ func (s *Speaker) freezeNativePlayerRPC() (int, error) {
 
 // unfreezeNativePlayerRPC 解冻指定 pid；pid<=0 时由客户端按进程名查找。
 func (s *Speaker) unfreezeNativePlayerRPC(pid int) error {
-	payload := map[string]int{"pid": pid}
+	payload := map[string]any{"pid": pid, "name": nativeTakeoverProcess}
 	if _, err := connect.GetRPC().CallRemote("unfreeze_native", payload, &nativeTakeoverRPCTimeoutMs); err != nil {
 		return fmt.Errorf("unfreeze_native 调用失败: %w", err)
 	}
@@ -284,7 +284,7 @@ func (s *Speaker) unfreezeNativePlayerRPC(pid int) error {
 
 // nativePlayerStateRPC 查询 mediaplayer 的 pid 与冻结状态。
 func (s *Speaker) nativePlayerStateRPC() (int, bool, error) {
-	resp, err := connect.GetRPC().CallRemote("native_playback_state", nil, &nativeTakeoverRPCTimeoutMs)
+	resp, err := connect.GetRPC().CallRemote("native_playback_state", map[string]string{"name": nativeTakeoverProcess}, &nativeTakeoverRPCTimeoutMs)
 	if err != nil {
 		return 0, false, err
 	}

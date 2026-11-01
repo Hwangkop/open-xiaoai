@@ -73,6 +73,15 @@ func IsProcessStopped(pid int) bool {
 	return st == 'T' || st == 't'
 }
 
+// NativeProcessState 返回指定进程的 pid 与是否处于停止态。
+func NativeProcessState(name string) (pid int, stopped bool) {
+	pid, err := FindProcessByName(name)
+	if err != nil {
+		return 0, false
+	}
+	return pid, IsProcessStopped(pid)
+}
+
 // NativePlaybackState 返回 mediaplayer 的 pid 与是否处于冻结态。
 // 进程不存在时返回 pid=0、stopped=false。
 func NativePlaybackState() (pid int, stopped bool) {
