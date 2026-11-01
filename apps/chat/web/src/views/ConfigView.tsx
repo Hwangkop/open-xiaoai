@@ -14,6 +14,7 @@ import {
   Search,
   Server,
   SlidersHorizontal,
+  Terminal,
   Volume2,
 } from 'lucide-react'
 import { parseDocument } from 'yaml'
@@ -80,6 +81,58 @@ const SECTIONS: SectionDef[] = [
       },
       { path: ['prompt', 'inject_time'], label: '注入当前时间', type: 'bool' },
       { path: ['continuation_seconds'], label: '对话窗口（秒）', type: 'number' },
+      {
+        path: ['llm', 'base_url'],
+        label: 'LLM 接口地址',
+        type: 'text',
+        placeholder: 'https://api.deepseek.com',
+        hint: 'OpenAI 兼容接口；改完需重启服务',
+      },
+      {
+        path: ['llm', 'api_key'],
+        label: 'LLM API Key',
+        type: 'password',
+        hint: '路由/分类器/降级都用它；改完需重启服务',
+      },
+      {
+        path: ['llm', 'model'],
+        label: 'LLM 模型',
+        type: 'text',
+        placeholder: 'deepseek-v4-flash',
+      },
+    ],
+  },
+  {
+    title: 'codex',
+    desc: '常驻 codex 后端（chat.provider = codex 时生效）',
+    icon: Terminal,
+    fields: [
+      { path: ['codex', 'bin'], label: '可执行文件', type: 'text', placeholder: 'codex' },
+      {
+        path: ['codex', 'workspace'],
+        label: '工作目录',
+        type: 'text',
+        hint: '给一个空目录，别让它看到项目文件',
+      },
+      {
+        path: ['codex', 'codex_home'],
+        label: 'CODEX_HOME',
+        type: 'text',
+        hint: '里面放 config.toml（模型供应商 + MCP）与 models.json',
+      },
+      {
+        path: ['codex', 'timeout_seconds'],
+        label: '单轮超时（秒）',
+        type: 'number',
+        placeholder: '60',
+      },
+      {
+        path: ['codex', 'first_token_seconds'],
+        label: '首字超时（秒）',
+        type: 'number',
+        placeholder: '20',
+        hint: '调工具时不吐字，别设太小；超时会降级到直连模型',
+      },
     ],
   },
   {
