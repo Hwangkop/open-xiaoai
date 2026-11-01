@@ -6,6 +6,8 @@ Open-XiaoAI 通过运行在音箱上的 client 补丁程序，把小爱音箱的
 
 当前重点维护的 `apps/client`、`apps/chat` 和 `pkg/music` 都是使用 Golang 重写的新版本，目标是减少运行时依赖，尽量用单二进制完成部署。
 
+> 本项目源自 [cxjava/open-xiaoai](https://github.com/cxjava/open-xiaoai)，并在其基础上继续维护：Windows 部署、Home Assistant 家电控制、双阶段 ASR、管理台与 MCP 工具等。
+
 <img src="./docs/images/cover.jpg" alt="Open-XiaoAI cover" width="400">
 
 ## 你可以用它做什么
