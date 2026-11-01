@@ -8,8 +8,13 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // handleWakeTest 在线测试一句话能否命中唤醒词：
@@ -52,6 +57,65 @@ func (a *adminServer) wakeMatch(text string) bool {
 	return false
 }
 
+// patchASRProviders 把热切换的引擎写回 config.yaml（保留注释与其它字段）。
+func (a *adminServer) patchASRProviders(wake, dialog string) error {
+	if a.configPath == "" {
+		return fmt.Errorf("配置路径未知")
+	}
+	raw, err := os.ReadFile(a.configPath)
+	if err != nil {
+		return err
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return err
+	}
+	set := func(key, val string) {
+		if val == "" || len(doc.Content) == 0 {
+			return
+		}
+		root := doc.Content[0]
+		if root.Kind != yaml.MappingNode {
+			return
+		}
+		asr := mappingValue(root, "asr")
+		if asr == nil || asr.Kind != yaml.MappingNode {
+			return
+		}
+		for i := 0; i+1 < len(asr.Content); i += 2 {
+			if asr.Content[i].Value == key {
+				asr.Content[i+1].Value = val
+				return
+			}
+		}
+		asr.Content = append(asr.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: key},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: val},
+		)
+	}
+	set("wake_provider", wake)
+	set("dialog_provider", dialog)
+
+	out, err := yaml.Marshal(&doc)
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(a.configPath, out)
+}
+
+// mappingValue 在 mapping 节点里按键取值。
+func mappingValue(n *yaml.Node, key string) *yaml.Node {
+	if n == nil || n.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		if n.Content[i].Value == key {
+			return n.Content[i+1]
+		}
+	}
+	return nil
+}
+
 func (a *adminServer) handleASR(w http.ResponseWriter, r *http.Request) {
 	router := a.getASRRouter()
 	if router == nil {
@@ -71,16 +135,24 @@ func (a *adminServer) handleASR(w http.ResponseWriter, r *http.Request) {
 			writeAdminError(w, http.StatusBadRequest, "请求 JSON 格式不正确")
 			return
 		}
-		if p := strings.TrimSpace(req.WakeProvider); p != "" {
-			if err := router.SetWakeProvider(p); err != nil {
+		wake, dialog := strings.TrimSpace(req.WakeProvider), strings.TrimSpace(req.Provider)
+		if wake != "" {
+			if err := router.SetWakeProvider(wake); err != nil {
 				writeAdminError(w, http.StatusBadRequest, err.Error())
 				return
 			}
 		}
-		if p := strings.TrimSpace(req.Provider); p != "" {
-			if err := router.SetDialogProvider(p); err != nil {
+		if dialog != "" {
+			if err := router.SetDialogProvider(dialog); err != nil {
 				writeAdminError(w, http.StatusBadRequest, err.Error())
 				return
+			}
+		}
+		// 写回 config.yaml：否则重启后又回到文件里的旧值，
+		// 管理台两处（识别引擎卡片 / 配置页）就会显示不一致。
+		if wake != "" || dialog != "" {
+			if err := a.patchASRProviders(wake, dialog); err != nil {
+				log.Printf("⚠️ 识别引擎已切换，但写回配置失败: %v", err)
 			}
 		}
 	}
