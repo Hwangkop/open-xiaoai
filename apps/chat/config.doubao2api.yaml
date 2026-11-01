@@ -1,0 +1,87 @@
+# 豆包聊天后端 A：doubao2api（网页逆向版，免费）
+#
+# 使用前提：本机已启动 doubao2api 服务，并且已完成扫码登录
+#   git clone https://github.com/wangchuxiaoji-oss/doubao2api
+#   cd doubao2api && pip install -e .
+#   python -m doubao2api           # 默认 127.0.0.1:9090
+#
+# 启动本服务：./chat -config config.doubao2api.yaml
+#
+# 注意：doubao2api 依赖豆包网页 session，过期需重新扫码；属逆向用法，可能触发风控。
+# 它与本文件其余配置无关，切回官方 ARK 只需换 -config。
+
+server:
+  host: "0.0.0.0"
+  port: 4399
+
+auth:
+  users: []
+
+# 管理页扫码登录：登录过期时到 /admin 点「扫码登录」重新授权。
+# 这里指向本机运行的 doubao2api，扫码成功后 session 由它保存。
+doubao2api:
+  base_url: "http://127.0.0.1:9090"
+  # 与 doubao2api 的 DOUBAO_API_KEY 保持一致；它没设就留空
+  api_key: ""
+
+llm:
+  # doubao2api 的 OpenAI 兼容端点在 /v1
+  base_url: "http://127.0.0.1:9090/v1"
+  # doubao2api 未设置 DOUBAO_API_KEY 时，这里填任意非空值即可
+  api_key: "any"
+  # doubao = 快速模式（低延迟，推荐语音场景）
+  # doubao-think = 思考模式（带思维链，会变慢）
+  # doubao-expert = 专家模式（最慢）
+  model: "doubao"
+
+prompt:
+  system: "你是一个智能助手，请根据用户的问题给出回答。回答要简洁口语化，适合语音播报，不要使用 Markdown、列表或代码块。"
+  inject_time: true
+  timezone: "Asia/Shanghai"
+
+# 语音合成
+#   xiaoai = 小爱音箱自带的 tts_play.sh（默认，音色是小爱）
+#   doubao = 豆包网页版语音合成（音色自然，无需登录，本服务中转 MP3 给音箱播放）
+tts:
+  provider: "doubao"
+  # 豆包音色：zh_female_taozi_conversation_v4_wvae_bigtts（桃子，对话风格）
+  speaker: "zh_female_taozi_conversation_v4_wvae_bigtts"
+  format: "mp3"          # mp3 / ogg_opus / pcm / wav
+  bit_rate: 32000
+  sample_rate: 24000
+  speech_rate: 1.0       # 语速，1.0 正常，>1 更快
+  pitch: 0.0             # 音调，0 正常
+
+# 定时任务结果播报（可选）
+# 任务本身在豆包网页/App 的「定时任务」里创建和维护，这里只做轮询与播报。
+# 首次启动只记录基线，不会补播历史；按 message_id 去重。
+# schedules:
+#   enabled: true
+#   poll_interval: "60s"        # 轮询间隔，最小 10s
+#   quiet_hours: "23:00-07:00"  # 静默时段，留空表示全天播报
+
+context:
+  history_max_length: 1
+
+interrupt:
+  keywords:
+    - "闭嘴"
+    - "停止"
+    - "暂停"
+    - "停一下"
+    - "不要说了"
+    - "别说了"
+  match_mode: "prefix"
+  kws_interrupt: true
+
+call_ai_keywords:
+  - "豆包"
+  - "小度"
+
+greeting: "已连接"
+error_message: "出错了，请稍后再试吧！"
+reply_prefix: "AI回复"
+
+custom_replies:
+  - match: "测试播放文字"
+    text: "你好，很高兴认识你！"

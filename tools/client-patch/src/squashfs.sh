@@ -27,9 +27,12 @@ BLOCKSIZE=$(echo "$SQUASHFS_INFO" | grep -o "blocksize: [0-9]* bytes" | cut -d' 
 echo "📦 [squashfs] 压缩: $COMPRESSION, 块大小: $BLOCKSIZE"
 
 echo "🔥 [squashfs] 正在重新打包固件..."
+# 非 root 解包时无法创建 /dev/console 字符设备，重打包必须补回来，
+# 否则设备启动时 console 缺失（社区实测会导致刷完起不来的问题）
 mksquashfs squashfs-root $FIRMWARE/root-patched.squashfs \
     -comp $COMPRESSION -b $BLOCKSIZE \
-    -noappend -all-root -always-use-fragments -no-xattrs -no-exports
+    -noappend -all-root -always-use-fragments -no-xattrs -no-exports \
+    -p '/dev/console c 600 0 0 5 1'
 
 MODEL=$(cat $BASE_DIR/assets/.model)
 IMAGE_MAX_SIZE=0

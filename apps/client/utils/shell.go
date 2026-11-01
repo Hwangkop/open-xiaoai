@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -79,9 +80,13 @@ var ttsRunner struct {
 
 var ttsCancelID int64
 
+// 注意：mediaplayer 没有 player_stop 方法（早期写的那个调用一直是静默失败），
+// 真正可用的是 player_play_operation，action 取 pause/stop。
 const stopNativePlaybackScript = `
 mphelper pause >/dev/null 2>&1 || true
-ubus call mediaplayer player_stop '{}' >/dev/null 2>&1 || true
+ubus call mediaplayer player_play_operation '{"action":"pause"}' >/dev/null 2>&1 || true
+ubus call mediaplayer player_play_operation '{"action":"stop"}' >/dev/null 2>&1 || true
+pkill -f 'tts_play.sh' >/dev/null 2>&1 || true
 `
 
 const (
@@ -91,6 +96,42 @@ const (
 
 var stopNativePlayback = func(script string) {
 	_, _ = RunShellWithTimeout(script, 3*time.Second)
+}
+
+// suppressUntil 压制原生播放的截止时间（unix ms）。AI 接管后小爱可能晚一拍才开口，
+// 单次 stop 拦不住，需要在一个短窗口内反复压。我们自己开始播放时立刻解除。
+var suppressUntil atomic.Int64
+
+// SuppressNativePlayback 在 d 时间窗内反复停掉固件原生播放。
+// d <= 0 表示立刻解除压制（例如我们自己的音频要开始播了）。
+func SuppressNativePlayback(d time.Duration) {
+	if d <= 0 {
+		suppressUntil.Store(0)
+		return
+	}
+	suppressUntil.Store(time.Now().Add(d).UnixMilli())
+	go func() {
+		for {
+			if time.Now().UnixMilli() >= suppressUntil.Load() {
+				return
+			}
+			stopNativePlayback(stopNativePlaybackScript)
+			time.Sleep(300 * time.Millisecond)
+		}
+	}()
+}
+
+func cancelNativeSuppression() {
+	suppressUntil.Store(0)
+}
+
+// StopNativePlayback 无条件停掉固件自己的播放（小爱原生回复 / 音乐）。
+//
+// 与 StopTTS 的差别：StopTTS 只在本进程发起过播放时才动原生播放器，
+// 避免误伤后台音乐；但"小爱先答、我们再让豆包答"的场景下本进程没发起过，
+// 于是两套声音会叠在一起。这个函数专用于接管场景，直接停。
+func StopNativePlayback() {
+	stopNativePlayback(stopNativePlaybackScript)
 }
 
 var notifyTTSStart = func() {
@@ -107,6 +148,8 @@ func isTTSScript(script string) bool {
 
 // RunShellInterruptible runs tts_play.sh or miplayer scripts; can be stopped via StopTTS.
 func RunShellInterruptible(script string, timeout time.Duration) (*CommandResult, error) {
+	// 我们自己的播放开始了，不需要再压制原生播放（否则会把自己也停掉）
+	cancelNativeSuppression()
 	duck := isTTSScript(script)
 	var endPreviousDuck bool
 

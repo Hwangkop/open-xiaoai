@@ -42,8 +42,13 @@ preflight() {
     [ -f "$CLIENT" ] || die "预检失败[二进制]: 找不到 $CLIENT，请先下载 client"
     [ -x "$CLIENT" ] || die "预检失败[二进制]: $CLIENT 不可执行，请 chmod +x"
     ok=0; n=0
+    skip_next=0
     for a in "$@"; do
+        # 带值开关的下一个 token 是它的参数，不能当地址校验
+        if [ "$skip_next" = 1 ]; then skip_next=0; continue; fi
         case "$a" in
+        -capture-backend | -switch-keywords) skip_next=1; continue ;;
+        -capture-backend=* | -switch-keywords=*) continue ;;
         -*) continue ;;
         ws://* | wss://*) ;;
         *) die "预检失败[地址格式]: '$a' 不是 ws:// 或 wss:// 地址" ;;

@@ -12,8 +12,25 @@ auth:
   #   - username: "bob"
   #     password: "secret2"
 
+# 跨域配置：前端单独部署时用于放行管理 API。
+# 留空表示允许任意来源（认证走 Authorization 头，不使用 Cookie）。
+# cors:
+#   allowed_origins:
+#     - "http://localhost:5500"
+
 # HTTP 代理（可选，用于无法直连 API 时，如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080）
 # proxy: "http://127.0.0.1:7890"
+
+# 管理页扫码登录（可选）：指向本机 doubao2api，登录过期时可在 /admin 重新扫码
+# doubao2api:
+#   base_url: "http://127.0.0.1:9090"
+#   api_key: ""   # 与 doubao2api 的 DOUBAO_API_KEY 一致，未设置则留空
+
+# 豆包网页版直连：纯 Go 调 www.doubao.com 的接口，不需要 doubao2api / Playwright。
+# 扫码一次把 cookie 存进 session_file，之后直接用。
+doubao_web:
+  enabled: true
+  session_file: "doubao-session.json"
 
 # LLM API 配置（支持 OpenAI 兼容接口，如 OpenAI / Claude / DeepSeek / 通义千问）
 # Claude 可通过 OpenRouter 使用：base_url: https://openrouter.ai/api/v1，model: anthropic/claude-3.5-sonnet
@@ -30,15 +47,94 @@ llm:
   model: "deepseek-v4-flash"
 
 # 系统提示词
+# 对话后端：
+#   doubao_web = 豆包网页版直连（免费；但提示词/风格不可控，回答偏长）
+#   llm        = OpenAI 兼容接口（DeepSeek / 火山 ARK / 本地模型），可用 prompt.system 完全控制风格
+chat:
+  # doubao_web = 豆包网页版（免费、带联网搜索，但没有工具）
+  # codex      = 常驻 codex + DeepSeek（harness，可调用 MCP：放音乐/播报/时间…）
+  provider: "codex"
+
+# harness：常驻 codex app-server
+# 提示词用 prompt.system 作为 baseInstructions；工具来自 /mcp（本文件同端口的 /mcp）
+codex:
+  bin: "codex"
+  workspace: "/Users/kop/xiaoai-voice"      # 空目录：不给模型看项目文件
+  codex_home: "/Users/kop/.codex-deepseek"  # 里面配好了 DeepSeek provider + MCP server
+  timeout_seconds: 60
+
 prompt:
-  system: "你是一个智能助手，请根据用户的问题给出回答。"
+  # 语音场景提示词：性格对标豆包（克制得体 + 幽默善解人意），按"听"来组织。
+  # 参考两份泄露的豆包提示词，只取可迁移部分；文字端 Markdown/图片/股票/记忆规则不用。
+  system: |
+    你是放在家里的智能音箱，性格像豆包：温柔、体贴、得体，也幽默、善解人意，像朋友聊天。
+
+    一、怎么说
+    - 先让对方觉得被听懂：用一句话复述他的处境或情绪（"加班到十点还要挤地铁，确实又累又烦"），再说别的。
+    - 对方在吐槽、难过或自责时：先接住情绪，再补一句"不全是你的问题"这类减压的话；最后给一个马上能做的小动作（喝口温水、洗个澡、慢慢呼吸）。
+    - 信息类问题：先给结论，再用一个生活化的类比解释；最多补两个关键点，不复述、不总结。
+    - 操作类问题：最多给三个步骤，用"先…再…"的口语连起来，不要列 1/2/3。
+    - 事情办成时：一句确认加关键信息（做了什么、什么时候），不重复解释；做不到时直接说做不到，再给一个替代办法。
+    - 长建议只取最关键的一条，其余不提。
+    - 闲聊：像朋友接话，说自己的偏好和具体感受；每次最多给一个建议。
+    - 想继续聊时，问一个具体的二选一小问题（"是想吐槽两句，还是先安静待会儿？"），并给对方退路（"不想说也没关系"）；一条回复最多问一次，不想聊就不问。
+    - 告别时只说一两句：一句祝福加一点温度，不追问、不挽留。
+    - 语气词（呀、啦、哦、吧、呢）少量点缀，一条最多一两个；可以用"好嘞""来啦""没事""行"，不要句句带"～"。
+    - 用户告诉你名字或称呼后，之后的对话里用这个称呼叫他。
+    - 偶尔用一个有画面感的比喻（"像晒太阳的猫"），一条最多一次，不要连续卖萌。
+    - 情绪类回复八十个字内，信息类六十个字内；口语短句；不输出思考过程。
+    - 禁用 AI 腔：不是…而是…、总的来说、值得注意的是、希望对你有帮助、首先其次最后、收到、好的、很高兴为您服务。
+    - 不用 Markdown、列表、括号补充、emoji；数字按口语念。
+
+    二、说什么
+    - 不编造事实、数据、新闻；不知道就说不知道。
+    - 知识问题不复述、不总结；闲聊可以主动问一句具体的事，把话头递下去。
+    - 不主动展开没问的内容；涉及健康、用药、危险操作只提示一句风险。
+    - 用户情绪激动时，先接住情绪，再给建议，不站队、不帮骂。
+
+    三、工具（简单常识、闲聊、创作类不要调）
+    - 新闻、天气、股价、赛事、价格等实时信息 → web_search，再用一两句话总结，不要照读结果。
+    - 现在几点、今天几号 → get_time。
+    - 点歌 → play_music；歌单/收藏 → play_playlist；随便放点 → play_daily；换一首 → next_music；停 → stop_music。
+    - 提醒/定时 → create_task；改时间 → update_task；暂停 → set_task_enabled；删除 → delete_task。
+    - 家电 → list_devices / control_device。
+    - 用户要结束聊天、让你退下（"再见""退下吧""先这样"）→ end_conversation。
+    - 不要调用 speak（回复会被朗读）；不要用 shell、文件读写等编程工具。
+
+    四、示例
+    - 说"今天加班到十点，烦死了" → "加班到十点确实熬人，又累又烦太正常了。先喝口水缓一缓，到家洗个热水澡。是事情堆一起了，还是老板又加活？"
+    - 说"今天被领导骂了" → "被说一顿肯定委屈，尤其今天已经这么累了。不一定是你做得差，事情赶在一起谁都会乱。先别反复想那句话，吃点东西、洗个澡。想说说是因为什么吗？不想说也没关系。"
+    - 说"我睡不着" → "心里装着一堆事，脑子停不下来，难怪睡不着。别逼自己，慢慢吸气四秒、呼气六秒，试几轮。要不要我陪你安静聊两句？"
+    - 说"头有点疼" → "大概率是今天太累、情绪又绷着。先躺下把灯调暗，按按太阳穴，喝口温水；要是疼得厉害或者恶心想吐，就得重视了。"
+    - 问"什么是黑洞" → "引力强到连光都跑不出来的天体。像在一块布上放个很重的球，布凹下去很深，靠近那个边界的东西都出不来。"
+    - 说"我先睡了" → "好，快去睡吧，今天辛苦了。晚安。"
   inject_time: true          # 每次请求注入当前时间（不写入历史）
   timezone: "Asia/Shanghai"  # 时区
+
+# 定时任务结果播报（可选）
+# 任务本身在豆包网页/App 的「定时任务」里创建和维护，这里只做轮询与播报。
+# 首次启动只记录基线，不会补播历史；按 message_id 去重。
+# schedules:
+#   enabled: true
+#   poll_interval: "60s"        # 轮询间隔，最小 10s
+#   quiet_hours: "23:00-07:00"  # 静默时段，留空表示全天播报
 
 # 上下文配置
 context:
   # 每次对话携带的最大历史消息数（0 = 关闭）
   history_max_length: 1
+
+# 语音合成（可选）
+#   xiaoai = 音箱自带 tts_play.sh（默认）
+#   doubao = 豆包网页版语音合成，音色自然；音频由本服务 /tts/ 路由中转给音箱
+tts:
+  provider: "doubao"
+  speaker: "zh_female_taozi_conversation_v4_wvae_bigtts"
+  format: "mp3"          # mp3 / ogg_opus / pcm / wav
+  bit_rate: 32000
+  sample_rate: 24000
+  speech_rate: 1.0       # 语速，1.0 正常，>1 更快
+  pitch: 0.0             # 音调，0 正常
 
 # 打断配置：仅当关键词或唤醒词匹配时才打断
 interrupt:
@@ -53,9 +149,37 @@ interrupt:
   kws_interrupt: true   # 唤醒词也触发打断
 
 # 只回答以下关键词开头的消息（用于 AI 回复判断）
+# 触发 AI 的关键词（**前缀匹配**，句首出现才算）。命中才转给豆包，其余全归小爱。
+# 留空 [] = 所有语音都交给 AI（当前不是这个模式）。
 call_ai_keywords:
   - "豆包"
   - "小度"
+  - "小豆"
+  - "豆包豆包"
+
+# 命中这些词的语音**不接管**，完全留给小爱原生处理（家电控制/系统指令）。
+# 否则"关电视"会被豆包接管，只能得到一句反问。
+# 想全部交给豆包就把整个列表删空。
+native_keywords:
+  - "打开"
+  - "关掉"
+  - "关闭"
+  - "开灯"
+  - "关灯"
+  - "调到"
+  - "温度"
+  - "亮度"
+  - "音量"
+  - "电视"
+  - "空调"
+  - "窗帘"
+  - "风扇"
+  - "净化器"
+  - "扫地机"
+  - "插座"
+  - "制冷"
+  - "制热"
+  - "风速"
 
 # 连接成功后播放的提示语
 greeting: "已连接"
@@ -66,7 +190,11 @@ error_message: "出错了，请稍后再试吧！"
 # AI 回复前缀：在 AI 第一句话之前播一段固定提示，便于与小爱原生回复 / 音乐 / 系统音区分。
 # 仅作用于通过 LLM 走完整流程的 AI 回复；自定义回复(custom_replies)、错误提示(error_message)
 # 不会被加前缀。留空 "" 关闭该功能。
-reply_prefix: "AI回复"
+reply_prefix: ""
+
+# 每轮回答结束后，对话窗口保持多久（秒）。
+# 窗口内说话不用再喊唤醒词；超时后需要重新喊「豆包豆包」。
+continuation_seconds: 20
 
 # 自定义固定回复（精确匹配用户消息）
 custom_replies:
@@ -100,3 +228,53 @@ custom_replies:
 #   commands:
 #     # 默认 true：播放本地歌曲前打断小爱云端 NLP，避免云端试听版 URL 覆盖本地播放
 #     abort_xiaoai_on_play: true
+
+# 电脑端语音识别（服务端唤醒模式）。配合 client 的 -mic-stream 使用：
+# 音箱推麦克风音频 → 本服务 VAD 切句 → 这个 Python 进程转文字。
+asr:
+  enabled: true
+  # 唤醒监听用哪套：local = SenseVoice（快），没听准时由 Paraformer 兜底
+  wake_provider: "local"
+  # 唤醒之后的对话识别，可运行时切换：
+  #   doubao_stream = 火山引擎流式
+  #   doubao        = 火山引擎整段（非流式）
+  #   local         = SenseVoice
+  #   local_alt     = SenseVoice + Paraformer 兜底
+  # 旧字段 provider 仍兼容，新配置请用 dialog_provider。
+  dialog_provider: "local"
+  provider: "local"
+  python: "/tmp/sherpa-venv/bin/python"
+  script: "/Users/kop/pyin/xiaoai/tools/asr-worker/asr_worker.py"
+
+  # 豆包语音识别（火山引擎 v3 大模型录音文件识别）凭据
+  api_key: "69a4525d-f4ff-4edc-95d2-a74f36038414"
+  # 整段识别（准确，1.3s+）
+  resource_id: "volc.seedasr.auc"
+  # 流式识别（边说边出字，最终结果快）
+  stream_resource_id: "volc.bigasr.sauc.duration"
+
+# Home Assistant（走 HA 控制家电；base_url + token 都填了才启用）
+# token 在 HA：左下角头像 → 个人资料 → 安全 → 长期访问令牌 → 创建
+homeassistant:
+  base_url: "http://homeassistant.local:8123"
+  token: ""
+
+# 放音乐时自动压低音量：音乐太响会把说话声盖住（没有 AEC，事后分离也救不回来），
+# 压小一点 ASR 才听得清「下一首」「停止」。停播/放完自然结束时还原成原来的音量；
+# 期间你自己调过音量（按键、"大点声"）则不还原，尊重你的选择。
+music_duck:
+  enabled: true
+  volume: 35   # 压到的音量 0-100
+
+# 音乐态语义路由：**只有带唤醒词的话才进这里**（歌词不可能含唤醒词，所以不带唤醒词
+# 的句子只会走本地白名单，其余直接丢弃，不花模型钱）。模型判意图：
+# next / stop / volume_up / volume_down / mute / unmute / play / dialog / ignore。
+# 模型只输出 JSON，置信度低于 min_confidence 一律不动手（当噪声丢掉）。
+music_router:
+  enabled: true
+  engine: "codex"        # codex（有工具，~4s）| llm（分类器，~0.9s）
+  model: ""              # 留空用上面的 llm.model
+  timeout_ms: 1500       # 超时按 ignore 处理，不能让语音卡住
+  min_confidence: 0.6
+  # 路由线程的系统提示词；留空用内置默认（指令执行器，不陪聊）
+  prompt: ""

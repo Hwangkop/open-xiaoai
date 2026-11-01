@@ -1,11 +1,14 @@
 module github.com/cxjava/open-xiaoai/apps/chat
 
-go 1.27
+go 1.27.3
 
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/cxjava/open-xiaoai/apps/client v0.0.0
+	github.com/cxjava/open-xiaoai/pkg/homeassistant v0.0.0
 	github.com/cxjava/open-xiaoai/pkg/music v0.0.0
+	github.com/cxjava/open-xiaoai/pkg/netease v0.0.0-00010101000000-000000000000
+	github.com/mozillazg/go-pinyin v0.21.0
 	github.com/sashabaranov/go-openai v1.42.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -20,12 +23,16 @@ require (
 	github.com/dop251/goja_nodejs v0.0.0-20260212111938-1f56ff5bcf14 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/google/pprof v0.0.0-20260802141513-ef3492d7dac3 // indirect
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 )
 
 replace (
 	github.com/cxjava/open-xiaoai/apps/client => ../client
+	github.com/cxjava/open-xiaoai/pkg/homeassistant => ../../pkg/homeassistant
 	github.com/cxjava/open-xiaoai/pkg/lx-go => ../../pkg/lx-go
 	github.com/cxjava/open-xiaoai/pkg/music => ../../pkg/music
 )
+
+replace github.com/cxjava/open-xiaoai/pkg/netease => ../../pkg/netease

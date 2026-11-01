@@ -106,6 +106,13 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
+    # 管理前端是独立的静态站点（apps/chat/web 构建产物），随包发布，解压后直接用。
+    # 发布前请先执行 `just web-build`。
+    extra_files:
+      - src: apps/chat/web/dist
+        dst: web
+      - src: apps/chat/config.yaml
+        dst: config.yaml
 
 changelog:
   sort: asc

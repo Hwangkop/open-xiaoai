@@ -1,0 +1,73 @@
+# 豆包聊天后端 B：火山方舟 ARK（官方接口，稳定）
+#
+# 使用前提：在 https://console.volcengine.com/ark 开通模型并创建 API Key
+# 启动本服务：./chat -config config.ark.yaml
+#
+# 与 doubao2api 相比：不依赖浏览器和网页 session，不会因风控失效，按量计费。
+
+server:
+  host: "0.0.0.0"
+  port: 4399
+
+auth:
+  users: []
+
+# 走官方 ARK 时不需要豆包网页登录，留空即可隐藏管理页的登录面板。
+doubao2api:
+  base_url: ""
+
+llm:
+  base_url: "https://ark.cn-beijing.volces.com/api/v3"
+  # 换成你自己的 ARK API Key
+  api_key: "ark-xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  # 也可填控制台里的推理接入点 ID（ep-xxxxxxxx），前提是该接入点已绑定模型
+  #
+  # doubao-seed-2-0-lite     快速、便宜，语音助手首选
+  # doubao-seed-2-0-pro      更聪明，延迟和成本更高
+  # doubao-seed-2-0-mini     最低延迟、高并发
+  # doubao-seed-1-6-flash-250615   上一代快速版
+  model: "doubao-seed-2-0-lite"
+
+prompt:
+  system: "你是一个智能助手，请根据用户的问题给出回答。回答要简洁口语化，适合语音播报，不要使用 Markdown、列表或代码块。"
+  inject_time: true
+  timezone: "Asia/Shanghai"
+
+# 语音合成
+#   xiaoai = 小爱音箱自带的 tts_play.sh（默认，音色是小爱）
+#   doubao = 豆包网页版语音合成（音色自然，无需登录，本服务中转 MP3 给音箱播放）
+tts:
+  provider: "doubao"
+  # 豆包音色：zh_female_taozi_conversation_v4_wvae_bigtts（桃子，对话风格）
+  speaker: "zh_female_taozi_conversation_v4_wvae_bigtts"
+  format: "mp3"          # mp3 / ogg_opus / pcm / wav
+  bit_rate: 32000
+  sample_rate: 24000
+  speech_rate: 1.0       # 语速，1.0 正常，>1 更快
+  pitch: 0.0             # 音调，0 正常
+
+context:
+  history_max_length: 1
+
+interrupt:
+  keywords:
+    - "闭嘴"
+    - "停止"
+    - "暂停"
+    - "停一下"
+    - "不要说了"
+    - "别说了"
+  match_mode: "prefix"
+  kws_interrupt: true
+
+call_ai_keywords:
+  - "豆包"
+  - "小度"
+
+greeting: "已连接"
+error_message: "出错了，请稍后再试吧！"
+reply_prefix: "AI回复"
+
+custom_replies:
+  - match: "测试播放文字"
+    text: "你好，很高兴认识你！"

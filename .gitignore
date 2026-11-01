@@ -50,3 +50,13 @@ xiaozhi.json
 open-xiaoai.node
 pkg/lx-go/js/*.js
 pkg/lx-go/lx-go
+
+# 刷机固件（体积大，不进仓库）
+firmware/
+
+# 本地敏感状态（豆包登录 cookie / 任务状态 / 个人配置）
+apps/chat/doubao-session.json
+apps/chat/schedule-state.json
+apps/chat/*.local.yaml
+*.local.yaml
+apps/chat/netease-session.json

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,10 +14,31 @@ import (
 const adminMaxRequestBytes = 2 << 20
 
 type adminServer struct {
-	saveMu      sync.Mutex
-	configPath  string
-	applyConfig func(*AppConfig) (adminApplyResult, error)
-	playTTS     func(string) error
+	saveMu          sync.Mutex
+	configPath      string
+	applyConfig     func(*AppConfig) (adminApplyResult, error)
+	playTTS         func(string) error
+	playURL         func(string) error
+	chatTest        func(string)
+	tasks           *taskStore
+	music           *musicState
+	speaker         *Speaker
+	engine          *Engine
+	runTask         func(string) error
+	stopTask        func(string) bool
+	stopPlayback    func()
+	getDoubaoConfig func() Doubao2APIConfig
+	getSchedule     func() *ScheduleWatcher
+	getDoubaoWeb    func() *DoubaoWeb
+	getASRRouter    func() *asrRouter
+	getConfig       func() *AppConfig
+	getWakeStore    func() *wakeStore
+	getNeteaseStore func() *neteaseStore
+
+	lyrics *lyricStore // 音乐态歌词过滤（L3）
+
+	codexServer *CodexAppServer // 智能体页：管理三条 thread 的上下文
+	taskRunner  TaskRunner
 }
 
 type adminApplyResult struct {
@@ -51,24 +73,72 @@ type adminErrorResponse struct {
 }
 
 func newAdminServer(app *appRuntime) *adminServer {
-	return &adminServer{
+	a := &adminServer{
+		music:      newMusicState(),
+		speaker:    app.speaker,
+		engine:     app.engine,
 		configPath: app.configPath,
 		applyConfig: func(cfg *AppConfig) (adminApplyResult, error) {
 			return app.ApplyConfig(cfg)
 		},
+		chatTest: func(text string) {
+			if app.engine != nil {
+				app.engine.OnMessageAuthorized(text)
+			}
+		},
 		playTTS: func(text string) error {
 			return app.speaker.PlayTTSWithTimeout(text, 15000)
 		},
+		playURL: func(url string) error {
+			// 先排队：等本轮回复播完再起播，避免和确认语重叠
+			app.speaker.QueueMusic(url)
+			return nil
+		},
+		stopPlayback: func() {
+			app.speaker.StopMusic()
+			_ = app.speaker.StopTTS()
+		},
+		getDoubaoConfig: func() Doubao2APIConfig {
+			if cfg := app.Config(); cfg != nil {
+				return cfg.Doubao2API
+			}
+			return Doubao2APIConfig{}
+		},
+		getSchedule: func() *ScheduleWatcher {
+			return app.ScheduleWatcher()
+		},
+		getDoubaoWeb: func() *DoubaoWeb {
+			return app.DoubaoWeb()
+		},
+		getASRRouter: func() *asrRouter {
+			return app.ASRRouter()
+		},
+		getConfig: func() *AppConfig {
+			return app.Config()
+		},
+		getWakeStore: func() *wakeStore {
+			return app.WakeStore()
+		},
+		getNeteaseStore: func() *neteaseStore {
+			return app.NeteaseStore()
+		},
 	}
-}
 
-func (a *adminServer) handlePage(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeAdminError(w, http.StatusMethodNotAllowed, "请求方法不支持")
-		return
+	a.codexServer = app.codexServer
+	a.taskRunner = app.taskRunner
+
+	// 恢复上次的播放队列：服务重启后"下一首"才不至于报"没有正在播放的歌单"
+	a.loadMusic(filepath.Join(filepath.Dir(a.configPath), "music-queue.json"))
+
+	// 音乐态歌词过滤（L3）：按歌曲 id 缓存歌词，判断一句话是不是正在播的歌词
+	a.lyrics = newLyricStore(func(ctx context.Context, id int64) (string, error) {
+		return a.neteaseClient().Lyric(ctx, id)
+	})
+	// 音乐态语义路由（L4）：白名单/唤醒词/歌词都没拦住的句子才交给模型
+	if app.engine != nil {
+		app.engine.SetMusicRouting(a.musicDesc, a.searchAndPlay)
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(adminHTML))
+	return a
 }
 
 func (a *adminServer) handleConfig(w http.ResponseWriter, r *http.Request) {
@@ -210,115 +280,3 @@ func writeAdminJSON(w http.ResponseWriter, status int, v any) {
 func writeAdminError(w http.ResponseWriter, status int, message string) {
 	writeAdminJSON(w, status, adminErrorResponse{Error: message})
 }
-
-const adminHTML = `<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Open XiaoAI 管理页</title>
-  <style>
-    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f6f7f9; color: #1f2933; }
-    main { max-width: 1100px; margin: 0 auto; padding: 24px; }
-    h1 { margin: 0 0 8px; font-size: 28px; }
-    section { background: #fff; border: 1px solid #e3e8ef; border-radius: 12px; padding: 18px; margin-top: 18px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); }
-    label { display: block; font-weight: 600; margin-bottom: 8px; }
-    textarea { box-sizing: border-box; width: 100%; min-height: 180px; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; line-height: 1.5; }
-    #configText { min-height: 560px; }
-    button { margin-top: 12px; padding: 9px 14px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; font-weight: 600; cursor: pointer; }
-    button:disabled { background: #94a3b8; cursor: not-allowed; }
-    .muted { color: #64748b; }
-    .status { margin-top: 10px; white-space: pre-wrap; }
-    .ok { color: #047857; }
-    .err { color: #b42318; }
-  </style>
-</head>
-<body>
-<main>
-  <h1>Open XiaoAI 管理页</h1>
-  <p class="muted">在线编辑 chat 配置，并发送测试文本到音箱 TTS 播放。</p>
-
-  <section>
-    <label for="configText">当前配置文件：<span id="configPath" class="muted">加载中...</span></label>
-    <textarea id="configText" spellcheck="false"></textarea>
-    <button id="saveBtn" type="button">保存配置</button>
-    <div id="configStatus" class="status muted"></div>
-  </section>
-
-  <section>
-    <label for="ttsText">TTS 测试文本</label>
-    <textarea id="ttsText" placeholder="输入要让小爱音箱播放的一段话"></textarea>
-    <button id="ttsBtn" type="button">发送到音箱播放</button>
-    <div id="ttsStatus" class="status muted"></div>
-  </section>
-</main>
-
-<script>
-const configPath = document.getElementById('configPath');
-const configText = document.getElementById('configText');
-const configStatus = document.getElementById('configStatus');
-const saveBtn = document.getElementById('saveBtn');
-const ttsText = document.getElementById('ttsText');
-const ttsStatus = document.getElementById('ttsStatus');
-const ttsBtn = document.getElementById('ttsBtn');
-
-function setStatus(el, msg, ok) {
-  el.textContent = msg;
-  el.className = 'status ' + (ok ? 'ok' : 'err');
-}
-
-async function readJson(resp) {
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(data.error || data.message || '请求失败');
-  return data;
-}
-
-async function loadConfig() {
-  try {
-    const data = await readJson(await fetch('/admin/api/config', {credentials: 'same-origin'}));
-    configPath.textContent = data.path;
-    configText.value = data.content || '';
-    setStatus(configStatus, data.message || '配置已加载', true);
-  } catch (err) {
-    setStatus(configStatus, err.message, false);
-  }
-}
-
-saveBtn.addEventListener('click', async () => {
-  saveBtn.disabled = true;
-  try {
-    const data = await readJson(await fetch('/admin/api/config', {
-      method: 'PUT',
-      headers: {'Content-Type': 'application/json'},
-      credentials: 'same-origin',
-      body: JSON.stringify({content: configText.value})
-    }));
-    setStatus(configStatus, data.message || '配置已保存', true);
-  } catch (err) {
-    setStatus(configStatus, err.message, false);
-  } finally {
-    saveBtn.disabled = false;
-  }
-});
-
-ttsBtn.addEventListener('click', async () => {
-  ttsBtn.disabled = true;
-  try {
-    const data = await readJson(await fetch('/admin/api/tts', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      credentials: 'same-origin',
-      body: JSON.stringify({text: ttsText.value})
-    }));
-    setStatus(ttsStatus, data.message || '已发送', true);
-  } catch (err) {
-    setStatus(ttsStatus, err.message, false);
-  } finally {
-    ttsBtn.disabled = false;
-  }
-});
-
-loadConfig();
-</script>
-</body>
-</html>`

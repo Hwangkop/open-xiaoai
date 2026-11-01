@@ -5,6 +5,7 @@ import (
 	"flag"
 	"log"
 	"path/filepath"
+	"time"
 )
 
 func main() {
@@ -22,8 +23,11 @@ func main() {
 	}
 
 	speaker := NewSpeaker()
+	speaker.SetMusicDuckFile(filepath.Join(filepath.Dir(resolvedConfigPath), "music-duck.json"))
 	engine := NewEngine(cfg, speaker)
 	app := newAppRuntime(resolvedConfigPath, cfg, speaker, engine)
+	app.ApplyTTS(cfg)
+	app.ApplyMusicDuck(cfg)
 
 	ctx := context.Background()
 	if err := app.StartInitialMusic(ctx); err != nil {
@@ -35,11 +39,38 @@ func main() {
 	log.Printf("   监听: %s:%d", cfg.Server.Host, cfg.Server.Port)
 	log.Printf("   模型: %s", cfg.GetLLM().Model)
 	log.Printf("   关键词: %v", cfg.CallAIKeywords)
+	if cfg.TTS.UsesDoubao() {
+		log.Printf("   语音: 豆包 TTS (speaker=%s, format=%s)", cfg.TTS.Speaker, cfg.TTS.Format)
+	} else {
+		log.Printf("   语音: 音箱自带 TTS")
+	}
 	log.Printf("   打断: keywords=%v match=%s kws=%v", cfg.Interrupt.Keywords, cfg.Interrupt.MatchMode, cfg.Interrupt.KwsInterrupt)
 	if cfg.Music.Enabled {
 		log.Printf("   音乐: 已启用")
 	}
-	log.Printf("   管理页: http://%s:%d/admin", cfg.Server.Host, cfg.Server.Port)
+	if cfg.Schedules.Enabled {
+		if !cfg.DoubaoWeb.Enabled {
+			log.Printf("   定时任务: 已跳过（未启用 doubao_web）")
+		} else {
+			loc, err := time.LoadLocation(cfg.Prompt.Timezone)
+			if err != nil {
+				loc = time.Local
+			}
+			statePath := filepath.Join(filepath.Dir(resolvedConfigPath), "schedule-state.json")
+			watcher := NewScheduleWatcher(app.Admin(), app.DoubaoWeb(), speaker, cfg.Schedules, statePath, loc)
+			app.setScheduleWatcher(watcher)
+			watcher.Start(ctx)
+			defer watcher.Stop()
+			quiet := cfg.Schedules.QuietHours
+			if quiet == "" {
+				quiet = "不静默"
+			}
+			log.Printf("   定时任务: 每 %s 轮询豆包任务，静默时段 %s", watcher.Interval(), quiet)
+		}
+	}
+
+	log.Printf("   管理 API: http://%s:%d/admin/api/", cfg.Server.Host, cfg.Server.Port)
+	log.Printf("   前端页面: apps/chat/web/index.html（可单独部署，填入 API 地址即可）")
 
 	if err := startServer(ctx, app); err != nil {
 		log.Fatalf("❌ server error: %v", err)

@@ -26,6 +26,8 @@ var (
 	flagSwitch         = flag.Bool("switch", false, "切换模式：多地址用于 gemini-go/chat-go 语音切换，说切换词即切换 Server")
 	flagSwitchKeywords = flag.String("switch-keywords", "小智模式,对话模式", "切换模式下的触发词，逗号分隔")
 	flagCaptureBackend = flag.String("capture-backend", "noop", "音频采集后端：noop（默认）或 usock（接管固件 speech.usock）")
+	flagMicStream      = flag.Bool("mic-stream", false, "把麦克风音频持续推给服务端（服务端唤醒模式，配合 -capture-backend noop）")
+	flagMicDevice      = flag.String("mic-device", "noop", "arecord 采集设备名（固件 dsnoop 共享设备：noop / Capture）")
 )
 
 func basicAuthHeader(username, password string) string {
@@ -81,6 +83,7 @@ func (c *AppClient) init(conn *websocket.Conn, cfg *runConfig) {
 	rpc.AddCommand("get_version", getVersion)
 	rpc.AddCommand("run_shell", runShell)
 	rpc.AddCommand("stop_tts", stopTTS)
+	rpc.AddCommand("stop_native", stopNative)
 	rpc.AddCommand("start_play", startPlay)
 	rpc.AddCommand("stop_play", stopPlay)
 	rpc.AddCommand("start_recording", c.startRecording)
@@ -229,6 +232,21 @@ func (c *AppClient) run() {
 	}
 	log.Printf("🎙️ 音频采集后端: %s", *flagCaptureBackend)
 	log.Println("✅ 已启动")
+
+	// 服务端唤醒模式：固件用 dsnoop 共享采集，我们可以再开一路 arecord 与它同时收音。
+	// 音频推给服务端做唤醒词识别（电脑算力充足，模型可以比音箱本地大得多）。
+	if *flagMicStream {
+		streamer, err := audio.StartMicStream(*flagMicDevice, func(chunk []byte) error {
+			// 还没连上服务端时丢弃即可，不刷日志
+			_ = connect.GetMessageManager().SendStream("mic", chunk, nil)
+			return nil
+		})
+		if err != nil {
+			log.Printf("⚠️ 麦克风推流启动失败: %v", err)
+		} else {
+			defer streamer.Stop()
+		}
+	}
 
 	var currentIndex int
 	reconnectDelay := 1 * time.Second
@@ -390,6 +408,24 @@ func runShell(req connect.Request) (connect.Response, error) {
 	data, _ := json.Marshal(res)
 	raw := json.RawMessage(data)
 	return connect.Response{ID: "0", Data: &raw}, nil
+}
+
+// stopNative 无条件停掉固件原生播放（小爱回复/音乐），用于 AI 接管时避免两套声音重叠。
+func stopNative(req connect.Request) (connect.Response, error) {
+	// 可选 payload: {"suppress_ms": 2000}。不传默认压 2 秒；传 0 表示立刻解除
+	// （服务端在我们自己的音频开播前调用，免得把自己也压掉）。
+	ms := 2000
+	if req.Payload != nil {
+		var p struct {
+			SuppressMS int `json:"suppress_ms"`
+		}
+		if err := json.Unmarshal(*req.Payload, &p); err == nil {
+			ms = p.SuppressMS
+		}
+	}
+	log.Printf("⏹️ [rpc] stop_native 收到 (id=%s): suppress=%dms", req.ID, ms)
+	utils.SuppressNativePlayback(time.Duration(ms) * time.Millisecond)
+	return connect.SuccessResponse(), nil
 }
 
 func stopTTS(req connect.Request) (connect.Response, error) {

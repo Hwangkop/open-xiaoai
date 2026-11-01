@@ -87,6 +87,13 @@ func GetDevice(acc *account.MiAccount, client *http.Client) (*account.MiAccount,
 		}
 	}
 	logger.Debug("未找到匹配设备，共 %d 个设备", len(deviceList))
+	for _, d := range deviceList {
+		if dm, ok := d.(map[string]interface{}); ok {
+			logger.Debug("  候选设备: name=%q alias=%q miotDID=%q deviceID=%q mac=%q hardware=%q romVersion=%q",
+				getStr(dm, "name"), getStr(dm, "alias"), getStr(dm, "miotDID"), getStr(dm, "deviceID"),
+				getStr(dm, "mac"), getStr(dm, "hardware"), getStr(dm, "romVersion"))
+		}
+	}
 	return acc, nil
 }
 

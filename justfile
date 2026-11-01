@@ -57,11 +57,16 @@ build-client os="linux" arch="arm" arm="7":
     ls -lh "$out"
 
 # 构建 chat，默认产物适用于 Linux x86_64 服务器
+# Windows 部署示例：just build-chat windows amd64
 build-chat os="linux" arch="amd64":
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p "{{DIST}}"
-    out="$PWD/{{DIST}}/chat_{{os}}_{{arch}}"
+    suffix=""
+    if [ "{{os}}" = "windows" ]; then
+        suffix=".exe"
+    fi
+    out="$PWD/{{DIST}}/chat_{{os}}_{{arch}}${suffix}"
     echo "==> build chat: $out"
     (
         cd "{{CHAT_PKG}}"
@@ -75,11 +80,16 @@ build-chat os="linux" arch="amd64":
     ls -lh "$out"
 
 # 构建 gemini，默认产物适用于 Linux x86_64 服务器
+# Windows 部署示例：just build-gemini windows amd64
 build-gemini os="linux" arch="amd64":
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p "{{DIST}}"
-    out="$PWD/{{DIST}}/gemini_{{os}}_{{arch}}"
+    suffix=""
+    if [ "{{os}}" = "windows" ]; then
+        suffix=".exe"
+    fi
+    out="$PWD/{{DIST}}/gemini_{{os}}_{{arch}}${suffix}"
     echo "==> build gemini: $out"
     (
         cd "{{GEMINI_PKG}}"
@@ -91,6 +101,27 @@ build-gemini os="linux" arch="amd64":
         echo "==> upx not found, skip compression"
     fi
     ls -lh "$out"
+
+# 一次性构建 Windows 版 chat 与 gemini（arm64 可传 arch="arm64"）
+build-windows arch="amd64":
+    just build-chat windows {{arch}}
+    just build-gemini windows {{arch}}
+
+# 安装管理前端依赖
+web-install:
+    cd apps/chat/web && pnpm install
+
+# 构建管理前端到 apps/chat/web/dist
+web-build:
+    cd apps/chat/web && pnpm build
+
+# 本地预览管理前端（需先 web-build；另开终端运行 chat）
+web port="5500":
+    cd apps/chat/web/dist && python3 -m http.server {{port}} --bind 127.0.0.1
+
+# 管理前端开发模式（热更新，默认 5173）
+web-dev:
+    cd apps/chat/web && pnpm dev
 
 # 复制 client 到远程 SSH 主机
 copy-client host dest="/data/open-xiaoai/client" os="linux" arch="arm" arm="7":
