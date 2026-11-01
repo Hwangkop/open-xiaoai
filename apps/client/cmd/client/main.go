@@ -577,5 +577,14 @@ func onStream(stream connect.Stream) error {
 }
 
 func main() {
+	// 启动自愈：上一次可能是接管途中被杀，mediaplayer 还停在 SIGSTOP。
+	// 这里补一次 SIGCONT（幂等，正常播放时是空操作），避免音乐一直不响。
+	if pid, stopped := utils.NativePlaybackState(); pid > 0 && stopped {
+		if err := utils.UnfreezeNativePlayback(pid); err != nil {
+			log.Printf("⚠️ 启动自愈：解冻 mediaplayer(pid=%d) 失败: %v", pid, err)
+		} else {
+			log.Printf("🧹 启动自愈：mediaplayer(pid=%d) 停在冻结状态，已解冻", pid)
+		}
+	}
 	NewAppClient().run()
 }
