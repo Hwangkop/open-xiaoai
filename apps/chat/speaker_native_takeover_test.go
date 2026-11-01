@@ -12,6 +12,7 @@ func newTakeoverTestSpeaker() (*Speaker, *int32, *int32, *bool) {
 	s := NewSpeaker()
 	var freezes, unfreezes int32
 	stopped := true
+	s.nativeReset = func(bool) { atomic.AddInt32(&unfreezes, 1) }
 	s.nativeFreeze = func() (int, error) {
 		atomic.AddInt32(&freezes, 1)
 		stopped = true
@@ -56,14 +57,20 @@ func TestTakeoverBeginAndEnd(t *testing.T) {
 	if s.TakeoverActive() {
 		t.Fatal("End 之后不应还在接管")
 	}
+	// 清理是异步的
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && atomic.LoadInt32(unfreezes) == 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if got := atomic.LoadInt32(unfreezes); got != 1 {
-		t.Fatalf("应解冻 1 次，实际 %d", got)
+		t.Fatalf("结束接管应触发一次播放器清理，实际 %d", got)
 	}
 
 	// 重复 End 幂等
 	s.EndNativeTakeover("测试")
+	time.Sleep(50 * time.Millisecond)
 	if got := atomic.LoadInt32(unfreezes); got != 1 {
-		t.Fatalf("重复 End 不应重复解冻，实际 %d", got)
+		t.Fatalf("重复 End 不应重复清理，实际 %d", got)
 	}
 }
 
@@ -83,8 +90,9 @@ func TestTakeoverTimeoutAutoUnfreezes(t *testing.T) {
 	if s.TakeoverActive() {
 		t.Fatal("超时后应自动退出接管")
 	}
+	time.Sleep(50 * time.Millisecond)
 	if got := atomic.LoadInt32(unfreezes); got == 0 {
-		t.Fatal("超时后应解冻")
+		t.Fatal("超时后应清理播放器")
 	}
 }
 

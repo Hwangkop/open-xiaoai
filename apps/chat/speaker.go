@@ -70,6 +70,7 @@ type Speaker struct {
 	nativeFreeze   func() (int, error)
 	nativeUnfreeze func(int) error
 	nativeStateFn  func() (int, bool, error)
+	nativeReset    func(bool)
 }
 
 var stopTTSTimeoutMs uint64 = 1500

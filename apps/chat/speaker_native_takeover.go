@@ -108,15 +108,13 @@ func (s *Speaker) EndNativeTakeover(reason string) {
 	t.mu.Unlock()
 
 	// 按进程名解冻：冻结期间 mediaplayer 可能被守护进程重启，存的 pid 会过期
-	if err := s.unfreezeNative(0); err != nil {
-		log.Printf("⚠️ 解冻 mediaplayer(pid=%d) 失败: %v", pid, err)
-		return
+	log.Printf("☀️ 原生唤醒接管结束（%s）：清理原生播放器(pid=%d)", reason, pid)
+	// 杀掉被冻住的播放器清空队列（解冻再 stop 会晚一拍，小爱会冒一声）
+	if s.nativeReset != nil {
+		go s.nativeReset(musicOn)
+	} else {
+		go s.resetPlaybackAfterTakeover(musicOn)
 	}
-	log.Printf("☀️ 原生唤醒接管结束（%s）：已解冻 mediaplayer(pid=%d)", reason, pid)
-
-	// 冻结期间排队的原生 TTS 会在解冻后补播（小爱"接着说"）。
-	// 先把它停掉，放歌的话再从当前曲目重新拉起来。
-	go s.resetPlaybackAfterTakeover(musicOn)
 }
 
 // watchNativeTakeover 在冻结期间盯着播放器：被外部解冻就补一刀，进程没了就结束接管。
@@ -156,11 +154,32 @@ func (s *Speaker) watchNativeTakeover(stop <-chan struct{}) {
 	}
 }
 
-// resetPlaybackAfterTakeover 解冻后清掉原生队列，必要时恢复音乐。
+// resetPlaybackAfterTakeover 结束接管时清掉原生播放队列。
+//
+// 不能"先解冻再 stop"：解冻那一刻排队的原生 TTS 已经开始出声，stop 晚 100ms 就晚了。
+// 这里直接杀掉被冻住的 mediaplayer，procd 会拉起一个干净实例，队列自然没了；
+// 放歌的话再把当前曲目重新拉起来。
 func (s *Speaker) resetPlaybackAfterTakeover(musicOn bool) {
-	time.Sleep(120 * time.Millisecond) // 等 mediaplayer 真正跑起来
-	if _, err := s.runShell(`ubus -t 3 call mediaplayer player_play_operation '{"action":"stop"}'`, 4000); err != nil {
-		log.Printf("⚠️ 清空原生播放队列失败: %v", err)
+	oldPID, _, _ := s.nativePlayerState()
+	if _, err := s.runShell(`kill -9 $(pidof mediaplayer) 2>/dev/null; true`, 4000); err != nil {
+		log.Printf("⚠️ 结束接管时杀掉原生播放器失败: %v", err)
+	}
+
+	newPID := 0
+	for i := 0; i < 15; i++ {
+		time.Sleep(200 * time.Millisecond)
+		pid, _, err := s.nativePlayerState()
+		if err == nil && pid > 0 && pid != oldPID {
+			newPID = pid
+			break
+		}
+	}
+	if newPID == 0 {
+		// 没被拉起：至少把旧进程解冻，别让它永远停在 T
+		log.Printf("⚠️ 原生播放器没有重新拉起（旧 pid=%d），退回解冻", oldPID)
+		_ = s.unfreezeNative(0)
+	} else {
+		log.Printf("♻️ 原生播放器已重启（%d → %d），排队的原生 TTS 已丢弃", oldPID, newPID)
 	}
 	if musicOn {
 		s.resumeMusicAfterSpeech()
