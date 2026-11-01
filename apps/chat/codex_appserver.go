@@ -62,6 +62,10 @@ type CodexAppServer struct {
 	cfg      CodexConfig
 	started  bool
 
+	// threadMu 串行化"确保主会话存在"：管理台点过"新开会话"后 threadID 为空，
+	// 但 app-server 进程还活着，这里要补建一条，不能把空 id 发给 turn/start。
+	threadMu sync.Mutex
+
 	// threadFile 把会话 id 落盘，重启后可以 thread/resume 接着聊。
 	threadFile string
 
@@ -296,12 +300,45 @@ func (a *CodexAppServer) write(v any) error {
 
 // Turn 在默认会话上跑一轮。
 func (a *CodexAppServer) Turn(ctx context.Context, text string, onDelta func(string)) (string, error) {
-	if !a.isStarted() {
-		if err := a.Start(ctx); err != nil {
-			return "", err
-		}
+	threadID, err := a.ensureThread(ctx)
+	if err != nil {
+		return "", err
 	}
-	return a.TurnOn(ctx, a.threadID, text, onDelta)
+	return a.TurnOn(ctx, threadID, text, onDelta)
+}
+
+// ensureThread 确保主会话存在。
+//
+// 管理台「智能体」页点“新开会话”只把 threadID 清空（app-server 进程不动），
+// 老版本 Turn 看到 started=true 就直接拿空 id 发 turn/start，结果是：
+// turn/start: invalid thread id ... found 0，然后每一轮都降级到没有工具的直连模型，
+// 语音里点歌/设提醒全失效，直到重启进程。这里负责把会话补回来。
+func (a *CodexAppServer) ensureThread(ctx context.Context) (string, error) {
+	a.threadMu.Lock()
+	defer a.threadMu.Unlock()
+
+	if err := a.Start(ctx); err != nil {
+		return "", err
+	}
+	if id := a.CurrentThread(); id != "" {
+		return id, nil
+	}
+
+	id, err := a.StartThread(ctx, a.cfg.BaseInstructions, a.cfg.Workspace)
+	if err != nil {
+		return "", fmt.Errorf("新建主会话失败: %w", err)
+	}
+	a.mu.Lock()
+	// 并发时以先写进去的为准，避免两个请求各建一条
+	if a.threadID == "" {
+		a.threadID = id
+	} else {
+		id = a.threadID
+	}
+	a.mu.Unlock()
+	a.saveThreadID(id)
+	log.Printf("🧩 codex 新会话（thread=%s）", id)
+	return id, nil
 }
 
 // TurnOn 在指定会话上跑一轮，onDelta 收到流式增量。返回完整文本。
@@ -311,10 +348,11 @@ func (a *CodexAppServer) TurnOn(ctx context.Context, threadID, text string, onDe
 
 // TurnOnOpts 同 TurnOn，可附加每轮参数（model / effort / summary 等）。
 func (a *CodexAppServer) TurnOnOpts(ctx context.Context, threadID, text string, onDelta func(string), opts map[string]any) (string, error) {
-	if !a.isStarted() {
-		if err := a.Start(ctx); err != nil {
-			return "", err
-		}
+	if err := a.Start(ctx); err != nil {
+		return "", err
+	}
+	if threadID == "" {
+		return "", fmt.Errorf("会话还没建立（thread id 为空）")
 	}
 	// 同一会话串行：先拿到这把锁，再发 turn/start。
 	// 等待期间如果调用方已经放弃（ctx 取消），立刻退出，别干等上一轮跑完。
@@ -512,6 +550,7 @@ func (a *CodexAppServer) ResetMainThread() {
 	a.threadID = ""
 	a.mu.Unlock()
 	a.clearThreadID()
+	log.Printf("🧩 主对话会话已重置，下次对话新建 thread")
 }
 
 // ListTurns 读会话里的轮次列表（用来在管理台显示"多少轮上下文"）。
