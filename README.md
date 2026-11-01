@@ -204,6 +204,21 @@ music:
 
 如果要播放和下载网络歌曲，再配置 `music.lx`，并单独启动 LX Sync Server。
 
+## 部署与运维
+
+完整的操作手册见 [docs/deploy.md](./docs/deploy.md)，按顺序覆盖：
+
+- **刷机**：Windows 下用 Amlogic 工具刷 `root-patched.squashfs`（含 `libusb0.dll`、驱动、CRLF 等实测坑）
+- **音箱端**：client 目录结构、`server.txt` 参数顺序、升级三件套、麦克风上行参数
+- **chat 服务**：Windows 交叉编译、`taskkill → 覆盖 → schtasks` 发布顺序、计划任务与防火墙
+- **ASR**：sherpa-onnx + SenseVoice / Paraformer 模型部署、唤醒与对话识别分开配置
+- **Home Assistant**：Hyper-V 跑 HAOS、镜像拉取加速、端口改回 8123、Xiaomi Home 集成与长期令牌
+- **账号登录**：豆包 / 网易云扫码登录，令牌与会话文件的存放位置
+- **管理台**：`http://<server>:4399/ui/` 的页面与配置方式、调试接口
+
+> 文档里的路径、IP、命令均为实测结果；涉及密码/令牌只写流程，不写值。
+> 在本仓库工作的 AI agent 请先读 [AGENTS.md](./AGENTS.md)（仓库约定与红线）。
+
 ## 相关项目
 
 如果你不想刷机，或者设备型号不适合本项目，可以参考：
