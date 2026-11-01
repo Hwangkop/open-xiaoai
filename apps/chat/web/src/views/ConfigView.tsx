@@ -93,8 +93,8 @@ const SECTIONS: SectionDef[] = [
         label: '唤醒监听',
         type: 'select',
         options: [
-          { value: 'local', label: 'SenseVoice + Paraformer 兜底' },
-          { value: 'local_alt', label: 'SenseVoice' },
+          { value: 'local', label: 'SenseVoice' },
+          { value: 'local_alt', label: 'SenseVoice + Paraformer 兜底' },
           { value: 'doubao_stream', label: '火山引擎流式' },
           { value: 'doubao', label: '火山引擎整段' },
         ],
@@ -104,10 +104,10 @@ const SECTIONS: SectionDef[] = [
         label: '唤醒之后的识别',
         type: 'select',
         options: [
-          { value: 'local_alt', label: 'SenseVoice + Paraformer 兜底' },
           { value: 'local', label: 'SenseVoice' },
-          { value: 'doubao_stream', label: '火山引擎非流式' },
-          { value: 'doubao', label: '火山引擎整段' },
+          { value: 'local_alt', label: 'SenseVoice + Paraformer 兜底' },
+          { value: 'doubao_stream', label: '火山引擎流式' },
+          { value: 'doubao', label: '火山引擎整段（非流式）' },
         ],
       },
       { path: ['asr', 'api_key'], label: '火山引擎 API Key', type: 'password' },
@@ -219,6 +219,19 @@ const ALL_FIELDS = SECTIONS.flatMap((s) => s.fields)
 
 type FormValues = Record<string, string | boolean>
 
+// selectOptions 对 asr 的两个引擎字段优先用后端 labels（和「唤醒与识别」页同一份文案）。
+function selectOptions(
+  field: FieldDef,
+  asrLabels: Record<string, string> | null,
+): { value: string; label: string }[] {
+  if (field.path[0] === 'asr' && asrLabels) {
+    const order = ['local', 'local_alt', 'doubao_stream', 'doubao']
+    const opts = order.filter((k) => asrLabels[k]).map((k) => ({ value: k, label: asrLabels[k] }))
+    if (opts.length > 0) return opts
+  }
+  return field.options ?? []
+}
+
 function keyOf(path: string[]) {
   return path.join('.')
 }
@@ -278,6 +291,7 @@ function applyForm(content: string, values: FormValues): string {
 }
 
 export function ConfigView({ onNotify, onError }: Props) {
+  const [asrLabels, setAsrLabels] = useState<Record<string, string> | null>(null)
   const [path, setPath] = useState('')
   const [content, setContent] = useState('')
   const [original, setOriginal] = useState('')
@@ -304,6 +318,21 @@ export function ConfigView({ onNotify, onError }: Props) {
       setLoading(false)
     }
   }, [onError])
+
+  // 识别引擎的显示名以后端的 labels 为准，避免前端另写一份文案导致两边不一致
+  useEffect(() => {
+    let alive = true
+    api<{ labels?: Record<string, string> }>('/admin/api/asr')
+      .then((r) => {
+        if (alive && r?.labels) setAsrLabels(r.labels)
+      })
+      .catch(() => {
+        /* 未启用服务端唤醒时没有这个接口，忽略 */
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
 
   useEffect(() => {
     void load()
@@ -399,7 +428,7 @@ export function ConfigView({ onNotify, onError }: Props) {
               className="h-10 w-full appearance-none rounded-md border border-input-border bg-input pr-9 pl-3 text-ui-base text-foreground outline-none transition-colors hover:border-input-border-hover focus-visible:border-input-border-focused"
             >
               <option value="">（未设置）</option>
-              {field.options?.map((o) => (
+              {selectOptions(field, asrLabels).map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>
