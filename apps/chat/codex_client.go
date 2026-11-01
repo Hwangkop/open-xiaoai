@@ -35,6 +35,9 @@ type CodexConfig struct {
 	CodexHome string `yaml:"codex_home"`
 	// BaseInstructions 作为 codex 线程的基础指令（相当于系统提示词）
 	BaseInstructions string `yaml:"base_instructions"`
+	// FirstTokenSeconds 多久没吐第一个字就认为卡住；0 用默认 20 秒。
+	// 太短会误杀"在思考/调工具"的正常回合（实测 12 秒砍掉过一次正常对话）。
+	FirstTokenSeconds int `yaml:"first_token_seconds"`
 }
 
 type CodexClient struct {

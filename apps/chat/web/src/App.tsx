@@ -40,7 +40,6 @@ const NAV: { id: ViewId; label: string; icon: typeof MessagesSquare; hint: strin
   { id: 'agents', label: '智能体', icon: Bot, hint: '三条会话的上下文管理' },
   { id: 'config', label: '配置', icon: SlidersHorizontal, hint: '在线编辑 chat 配置' },
   { id: 'tts', label: '语音测试', icon: Volume2, hint: '把文字发到音箱试听' },
-  { id: 'doubao', label: '豆包', icon: MessagesSquare, hint: '登录状态与会话记录' },
 ]
 
 const VIEW_IDS = NAV.map((n) => n.id)

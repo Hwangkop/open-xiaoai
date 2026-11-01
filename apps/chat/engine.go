@@ -719,6 +719,12 @@ func (e *Engine) handleMessage(ctx context.Context, text string, authorized bool
 	defer e.speaker.HideThinkingLED()
 
 	reply, err := e.streamAndPlay(ctx, text)
+	// codex 超时/挂掉：一个字都还没说，就换直连模型再试一次，
+	// 总比直接播"出错了"强（实测 DeepSeek 偶发十几秒不吐字）。
+	if err != nil && ctx.Err() == nil && strings.TrimSpace(reply) == "" && cfg.Chat.UseCodex() && e.client != nil {
+		log.Printf("⚠️ codex 失败（%v），降级到直连模型重试", err)
+		reply, err = e.streamAndPlayOn(ctx, text, true)
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			log.Println("⏹️ AI 回复被中断")
@@ -846,16 +852,22 @@ func hasSpeakableContent(s string) bool {
 // --- OpenAI streaming + sentence-by-sentence TTS ---
 
 func (e *Engine) streamAndPlay(ctx context.Context, userText string) (reply string, err error) {
+	return e.streamAndPlayOn(ctx, userText, false)
+}
+
+// streamAndPlayOn 同 streamAndPlay；forcePlain=true 时跳过 codex，直接走直连模型
+// （codex 挂掉/超时时的降级路径）。
+func (e *Engine) streamAndPlayOn(ctx context.Context, userText string, forcePlain bool) (reply string, err error) {
 	messages := e.buildMessages(userText)
 	log.Printf("🤖 调用 AI 中: messages=%d", len(messages))
 
 	cfg := e.Config()
 
 	var stream aiStream
-	if cfg.Chat.UseCodex() && e.codexServer != nil {
+	if !forcePlain && cfg.Chat.UseCodex() && e.codexServer != nil {
 		log.Printf("🧩 走 Codex 常驻（app-server）")
 		stream = newCodexAppStream(ctx, e.codexServer, userText)
-	} else if cfg.Chat.UseCodex() && e.codex != nil {
+	} else if !forcePlain && cfg.Chat.UseCodex() && e.codex != nil {
 		log.Printf("🧩 走 Codex CLI（profile=%s）", cfg.Codex.Profile)
 		stream = newCodexStream(ctx, e.codex, userText)
 	} else if web := e.useDoubaoWeb(); web != nil {

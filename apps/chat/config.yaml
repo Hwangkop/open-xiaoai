@@ -62,6 +62,9 @@ codex:
   workspace: "/Users/kop/xiaoai-voice"      # 空目录：不给模型看项目文件
   codex_home: "/Users/kop/.codex-deepseek"  # 里面配好了 DeepSeek provider + MCP server
   timeout_seconds: 60
+  # 首字超时：多久没有第一个字就中断这一轮（秒，默认 20）。
+  # 调工具时不吐字，别设太小；超时后会降级到直连模型重试一次。
+  first_token_seconds: 20
 
 prompt:
   # 语音场景提示词：性格对标豆包（克制得体 + 幽默善解人意），按"听"来组织。

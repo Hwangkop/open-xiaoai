@@ -363,7 +363,7 @@ func (a *CodexAppServer) turnOnce(ctx context.Context, threadID, text string, on
 	firstMs := int64(0)
 	deadline := time.After(time.Duration(a.cfg.Timeout) * time.Second)
 	// 首字看门狗：模型卡住时别让用户干等满 60s，早断早重试
-	firstTokenTimer := time.NewTimer(firstTokenTimeout)
+	firstTokenTimer := time.NewTimer(a.firstTokenTimeout())
 	defer firstTokenTimer.Stop()
 	for {
 		select {
@@ -374,7 +374,7 @@ func (a *CodexAppServer) turnOnce(ctx context.Context, threadID, text string, on
 			return string(sb), ctx.Err()
 		case <-firstTokenTimer.C:
 			if firstMs == 0 {
-				log.Printf("⚠️ codex 首字超时（%s），中断这一轮", firstTokenTimeout)
+				log.Printf("⚠️ codex 首字超时（%s），中断这一轮", a.firstTokenTimeout())
 				a.interruptTurn(threadID, turnID)
 				return string(sb), errFirstTokenTimeout
 			}
@@ -416,7 +416,7 @@ func (a *CodexAppServer) turnOnce(ctx context.Context, threadID, text string, on
 						default:
 						}
 					}
-					firstTokenTimer.Reset(firstTokenTimeout)
+					firstTokenTimer.Reset(a.firstTokenTimeout())
 				}
 			}
 		}
@@ -440,8 +440,16 @@ func extractTurnID(res json.RawMessage) string {
 	return v.TurnID
 }
 
-// firstTokenTimeout 多久没见到第一个字就认为卡住了。
-const firstTokenTimeout = 12 * time.Second
+// defaultFirstTokenTimeout 多久没见到第一个字就认为卡住了（可被 codex.first_token_seconds 覆盖）。
+// 调工具时不吐 delta，所以这个值不能太小——12 秒误杀过正常对话。
+const defaultFirstTokenTimeout = 20 * time.Second
+
+func (a *CodexAppServer) firstTokenTimeout() time.Duration {
+	if a.cfg.FirstTokenSeconds > 0 {
+		return time.Duration(a.cfg.FirstTokenSeconds) * time.Second
+	}
+	return defaultFirstTokenTimeout
+}
 
 var errFirstTokenTimeout = fmt.Errorf("首字超时")
 
