@@ -527,3 +527,41 @@ native_wake:
   takeover_enabled: true   # 默认关，验收后再打开
   max_seconds: 25          # 单轮上限，超时强制解冻
 ```
+
+## 12. 语音宿主实验（分支 `feature/speech-host`，未合并）
+
+目标：停掉 `mico_aivs_lab`，由 client 自己 bind `speech.usock`，原生助手完全不参与，音乐不再被冻结。
+
+### 12.1 已打通
+
+- 协议是 unix datagram + protobuf：上行 `REGISTER / STREAM_PREPARE / STREAM_TRANSMITTING / STREAM_END`，下行 `REGISTER_RESPONSE / PREPARE_RESPONSE / STOP_CAPTURE / DIALOG_FINISH`。
+- PNS 去掉 `-r opus32` 后注册的 codec 为空（PCM），ASR 帧 1920 字节（16k mono 60ms）。
+- 实机跑通：喊「小爱同学」→ 宿主收到 `PREPARE activate=0` → PCM 上行 → 本地 ASR → 豆包回答，全程没有「我在」、没有小爱插话。
+
+### 12.2 卡住的地方
+
+PCM 模式下 **`mipns-xiaomi` 会长期持有 `/dev/snd/pcmC0D2p`**（它要播自己的唤醒提示音），`mediaplayer` 拿不到播放设备：
+
+```text
+$ 遍历 /proc/*/fd 找 pcmC0D2p
+1951 mipns-xiaomi
+```
+
+表现就是"假播放"：`player_get_play_status` 返回 `status=1`，但进程一个 `/dev/snd` 句柄都没有，音乐无声；恢复时只能重拉 URL，于是从头播放。
+
+### 12.3 试过但无效
+
+- `dmix`：`/etc/asound.conf` 里的 `dmixer` 抢不到 `hw:0,2`（`Unknown slave PCM hw:0,2`），说明 mediaplayer 是独占打开的。
+- `mphelper pause/play`：`pause` 后状态变 0（不是 2 暂停），`play` 能回到 1，但音乐仍从头开始。
+- `player_set_positon`：设备对 URL 流不回报 `play_song_detail.position`（恒 0），无法验证也无法依赖。
+- `player_play_url` 的 `type` 参数：`type=2/0/3` 不会把音乐顶掉，但也没有证明 TTS 真的盖在音乐上播。
+
+### 12.4 下一步（未做）
+
+1. **抓厂商自己的播放调用**（优先级最高）：LD_PRELOAD 钩 `mico_aivs_lab` 的 `ubus_invoke`/`system`，让原生小爱在放歌时说一句话，记录它到底调了哪个方法、带了什么参数。用户观察过"小爱说话时音乐只是变小声"，说明厂商有一条叠加播放 + 压音量的路径，抄它比自己猜参数靠谱。
+2. `player_play_music` 的 `startOffset` 是否能让重拉从中断处开始。
+3. 自建音乐代理：音频经我们转发，按字节偏移续播（改动大，但确定可行）。
+
+### 12.5 结论
+
+语音宿主与 `mediaplayer` 的音乐播放存在设备级互斥，暂不启用；默认仍是第 11 节的冻结方案。代码在 `feature/speech-host` 分支，OpenSpec 提案为 `native-speech-socket-takeover`。
