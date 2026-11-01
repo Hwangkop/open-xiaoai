@@ -146,6 +146,7 @@ func startServer(ctx context.Context, app *appRuntime) error {
 	mux.HandleFunc("/admin/api/debug/shell", admin.handleDebugShell)
 	mux.HandleFunc("/admin/api/debug/mic-capture", admin.handleDebugMicCapture)
 	mux.HandleFunc("/admin/api/debug/music-state", admin.handleDebugMusicState)
+	mux.HandleFunc("/admin/api/debug/native-asr", admin.handleDebugNativeASR)
 	mux.HandleFunc("/admin/api/debug/route", admin.handleDebugRoute)
 	mux.HandleFunc("/admin/api/debug/lyric", admin.handleDebugLyric)
 	mux.HandleFunc("/admin/api/debug/utterance", admin.handleDebugUtterance)

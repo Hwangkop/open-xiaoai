@@ -33,12 +33,24 @@ type Engine struct {
 	cancelFunc context.CancelFunc
 	lastMsgTS  int64
 
+	// 同一句话可能同时被小爱 ASR 和本地上行 ASR 听到，去重避免问豆包两次
+	turnMu   sync.Mutex
+	turnText string
+	turnAt   time.Time
+
 	historyMu sync.Mutex
 	history   []openai.ChatCompletionMessage
 
 	// 小爱是否正在播报（从 instruction.log 的 Speak/FinishSpeakStream 推出来）
 	xiaoiSpeaking   atomic.Bool
 	xiaoiSpeakUntil atomic.Int64
+
+	// nativeTurn 标记本轮由「小爱同学」触发：这种轮次结束后不续开本地对话窗口，
+	// 否则本地 ASR 会把小爱的播报、环境声继续当成指令送给豆包。
+	nativeTurn atomic.Bool
+	// nativeChain 连续的原生轮数：回答完自动重开一次原生收音，实现连续对话；
+	// 达到上限就不再自动续，需要重新喊「小爱同学」。
+	nativeChain atomic.Int32
 
 	// codex 非空且 provider=codex 时，走 Codex CLI（一次性 exec）
 	codex *CodexClient
@@ -298,6 +310,12 @@ func (e *Engine) onUtterance(text string, asr UtteranceASR) {
 	}
 	cfg := e.Config()
 
+	// 原生唤醒接管进行中：这段话已经由小爱 ASR 交给主助手，本地这路不要再问一遍
+	if e.speaker.TakeoverActive() {
+		log.Printf("🔇 [PC ASR] 接管中，忽略本地上行识别: %q", text)
+		return
+	}
+
 	matched := e.matchWake(text, cfg)
 	wakeRest := ""
 	if matched {
@@ -414,6 +432,11 @@ func (e *Engine) handleDialogTurn(text string, matched bool, asr UtteranceASR) {
 	if asr.Dialog != nil {
 		text = e.refineDialog(text, asr.Dialog)
 	}
+	// 同一句话可能刚被小爱 ASR 接管处理过
+	if !e.claimTurn(text) {
+		log.Printf("🔁 [PC ASR] 与原生 ASR 重复，跳过: %q", text)
+		return
+	}
 	recordUtterance(utteranceRecord{Text: text, Dialog: true})
 	log.Printf("💬 [PC ASR] 对话模式内: %q", text)
 	e.OnMessageAuthorized(text)
@@ -421,6 +444,7 @@ func (e *Engine) handleDialogTurn(text string, matched bool, asr UtteranceASR) {
 
 // handleMatchedWake 命中唤醒词后的统一处理：进对话模式，只喊了唤醒词就应一声。
 func (e *Engine) handleMatchedWake(rest string) {
+	e.nativeChain.Store(0)
 	// 剩余部分本身又命中了唤醒词（"德邦德邦"这种整句被听错的），
 	// 说明用户只是喊了一声，没带指令 —— 按裸唤醒处理，别把这段垃圾发给 AI。
 	if strings.TrimSpace(rest) != "" && e.matchWake(rest, e.Config()) {
@@ -532,6 +556,11 @@ func (e *Engine) handleInstruction(data []byte) {
 	// 避免它的声音被我们的麦克风录下来又送给豆包，也避免两边同时出声。
 	switch {
 	case msg.Header.Namespace == "SpeechSynthesizer" && msg.Header.Name == "Speak":
+		if e.speaker.TakeoverActive() {
+			// 接管期间这个 Speak 本来就被冻住了，别让它把我们的上行识别一起关掉
+			log.Printf("🔇 接管中忽略原生播报事件（已被冻结）")
+			return
+		}
 		e.setXiaoaiSpeaking(true)
 		log.Printf("🔊 小爱开始播报（暂停上行识别）")
 		return
@@ -553,6 +582,8 @@ func (e *Engine) handleInstruction(data []byte) {
 
 	text := msg.Payload.Results[0].Text
 	log.Printf("🗣️ 用户: %s", text)
+	// 最近识别面板也记一份，标记来源；否则只能看到 PC ASR，分不清这句是谁识别的。
+	recordUtterance(utteranceRecord{Text: text, Source: "xiaoai"})
 	cfg := e.Config()
 
 	// 退出词：结束对话，不再续窗
@@ -562,12 +593,21 @@ func (e *Engine) handleInstruction(data []byte) {
 		return
 	}
 
+	// 原生唤醒接管：音乐播放中，小爱的 ASR final 直接交给主助手
+	if e.tryNativeTakeover(text) {
+		return
+	}
+
 	// 对话模式：唤醒词/上一句之后，这一段话直接进 AI
 	if e.consumeArmed() {
 		// 家电控制这类指令仍然交还小爱，别被 AI 抢走
 		if kw := cfg.nativeKeyword(text); kw != "" {
 			log.Printf("🏠 对话模式中命中原生指令（%s），交还小爱", kw)
 			e.disarmDialog()
+			return
+		}
+		if !e.claimTurn(text) {
+			log.Printf("🔁 与本地 ASR 重复（对话模式），跳过: %q", text)
 			return
 		}
 		log.Printf("👂 对话模式：本句直接进 AI")
@@ -591,6 +631,10 @@ func (e *Engine) handleInstruction(data []byte) {
 	decision, keyword := cfg.instructionDecision(text)
 	switch decision {
 	case instructionDecisionCallAI:
+		if !e.claimTurn(text) {
+			log.Printf("🔁 与本地 ASR 重复（call_ai），跳过: %q", text)
+			return
+		}
 		log.Printf("✅ 语音进入 AI: call_ai keyword=%q", keyword)
 		e.OnMessage(text)
 	case instructionDecisionInterruptOnly:
@@ -606,6 +650,82 @@ func (e *Engine) handleInstruction(data []byte) {
 		log.Printf("⏭️ 不处理语音: 未匹配 call_ai_keywords=%v 或 interrupt.keywords=%v match=%s text=%q", cfg.CallAIKeywords, cfg.Interrupt.Keywords, cfg.Interrupt.MatchMode, text)
 		return
 	}
+}
+
+// turnDedupeWindow 同一句话被两路 ASR 听到时，这个窗口内只处理一次。
+const turnDedupeWindow = 2500 * time.Millisecond
+
+// maxNativeChainTurns 一次「小爱同学」唤醒后，最多自动续开几次原生收音。
+const maxNativeChainTurns = 6
+
+// turnKey 归一化一句话：去标点、去唤醒词，用于判断两路 ASR 是不是在说同一句。
+func turnKey(text string) string {
+	s := stripPunct(text)
+	for _, w := range []string{"小爱同学", "豆包豆豆", "豆包"} {
+		s = strings.ReplaceAll(s, w, "")
+	}
+	return strings.TrimSpace(s)
+}
+
+// claimTurn 登记这一句；窗口内出现过同样的句子就返回 false。
+func (e *Engine) claimTurn(text string) bool {
+	key := turnKey(text)
+	if key == "" {
+		return true
+	}
+	now := time.Now()
+	e.turnMu.Lock()
+	defer e.turnMu.Unlock()
+	if e.turnText == key && now.Sub(e.turnAt) < turnDedupeWindow {
+		return false
+	}
+	e.turnText = key
+	e.turnAt = now
+	return true
+}
+
+// releaseTurn 撤销登记（接管没成功时，让本地 ASR 还能处理这一句）。
+func (e *Engine) releaseTurn() {
+	e.turnMu.Lock()
+	e.turnAt = time.Time{}
+	e.turnMu.Unlock()
+}
+
+// tryNativeTakeover 处理“小爱同学”这一轮：冻结设备播放器，把文本交给主助手。
+// 不限于音乐态——不放歌时同样接管，只是没有音乐需要恢复。
+// 返回 true 表示已经接管，调用方不要再走下面的路由分支。
+func (e *Engine) tryNativeTakeover(text string) bool {
+	cfg := e.Config()
+	if !cfg.NativeWake.Enabled || strings.TrimSpace(text) == "" {
+		return false
+	}
+	// 家电类指令仍交还小爱：冻了播放器但动作已经执行会很割裂
+	if kw := cfg.nativeKeyword(text); kw != "" {
+		log.Printf("🏠 接管跳过：命中原生指令（%s），交还小爱", kw)
+		return false
+	}
+	// 同一句话可能已经被本地 ASR 送去豆包了：不重复问，但还是要冻结小爱，
+	// 否则它会自己答一遍。用较短的上限兜底，避免白冻 25 秒。
+	if !e.claimTurn(text) {
+		if err := e.speaker.BeginNativeTakeover(8 * time.Second); err != nil {
+			log.Printf("⚠️ 重复句补冻结失败: %v", err)
+		} else {
+			log.Printf("🔁 接管跳过：本地 ASR 已处理过 %q，只冻结小爱", text)
+		}
+		return true
+	}
+	max := time.Duration(cfg.NativeWake.MaxSeconds) * time.Second
+	if err := e.speaker.BeginNativeTakeover(max); err != nil {
+		e.releaseTurn()
+		log.Printf("⚠️ 原生唤醒接管失败，回退原生路径: %v", err)
+		return false
+	}
+	e.setXiaoaiSpeaking(false)
+	e.nativeTurn.Store(true)
+	log.Printf("❄️ 原生唤醒接管：%q 交给主助手", text)
+	// 已经由原生唤醒触发，跳过唤醒词二次校验
+	e.OnMessageAuthorized(text)
+	return true
 }
 
 func instructionLineFromEventData(data []byte) string {
@@ -669,6 +789,25 @@ func (e *Engine) startMessage(text string, authorized bool) {
 	}
 	go func() {
 		e.handleMessage(ctx, text, authorized)
+		// 这一轮是小爱唤醒触发的：不续开本地对话窗口。
+		// 本地 ASR 听到的往往是小爱的播报或环境声，继续送给豆包只会自说自话。
+		if e.nativeTurn.Swap(false) {
+			e.disarmDialog()
+			// 原生续听：回答完替用户重新开一次麦克风，原生 VAD 空闲约 6 秒会自己结束。
+			// 连续聊到上限就停，避免一直占着收音。
+			if n := e.nativeChain.Add(1); n < maxNativeChainTurns {
+				time.Sleep(400 * time.Millisecond) // 等 miplayer 释放音频
+				if err := e.speaker.ContinueNativeDialog(); err == nil {
+					log.Printf("🎤 原生续听已开启（连续第 %d 轮，最多 %d 轮）", n+1, maxNativeChainTurns)
+					return
+				} else {
+					log.Printf("⚠️ 原生续听失败: %v", err)
+				}
+			}
+			e.nativeChain.Store(0)
+			log.Printf("🔇 原生唤醒轮次结束：不续开本地对话窗口（下次说话请再喊小爱同学）")
+			return
+		}
 		// 模型主动结束对话（MCP end_conversation）：本轮说完就回到唤醒监听，不再续窗
 		if e.endAfterReply.Swap(false) {
 			e.disarmDialog()
@@ -806,6 +945,12 @@ func (e *Engine) customWakeWords() []string {
 
 // matchWake 综合内置词表和用户自定义词判断是否唤醒。
 func (e *Engine) matchWake(text string, cfg *AppConfig) bool {
+	// 「小爱同学」保留给音箱原生唤醒：本地一律不认这个词。
+	// 这样两套唤醒是"二选一"——喊「小爱同学」走原生 + 豆包接管，
+	// 喊「小爱」（或豆包豆豆）才唤醒本地链路，不会因为包含关系两边同时进。
+	if strings.Contains(stripPunct(text), "小爱同学") {
+		return false
+	}
 	if cfg.IsAIWakeWord(text) {
 		return true
 	}

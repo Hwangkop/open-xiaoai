@@ -84,11 +84,15 @@ func (c *AppClient) init(conn *websocket.Conn, cfg *runConfig) {
 	rpc.AddCommand("run_shell", runShell)
 	rpc.AddCommand("stop_tts", stopTTS)
 	rpc.AddCommand("stop_native", stopNative)
+	rpc.AddCommand("freeze_native", freezeNative)
+	rpc.AddCommand("unfreeze_native", unfreezeNative)
+	rpc.AddCommand("native_playback_state", nativePlaybackState)
 	rpc.AddCommand("start_play", startPlay)
 	rpc.AddCommand("stop_play", stopPlay)
 	rpc.AddCommand("start_recording", c.startRecording)
 	rpc.AddCommand("stop_recording", stopRecording)
 	rpc.AddCommand("continue_dialog", continueDialog)
+	rpc.AddCommand("native_continue_dialog", nativeContinueDialog)
 	rpc.AddCommand("finish_dialog", finishDialog)
 
 	c.instructionMonitor.Start(func(event monitor.FileMonitorEvent) {
@@ -428,6 +432,44 @@ func stopNative(req connect.Request) (connect.Response, error) {
 	return connect.SuccessResponse(), nil
 }
 
+// freezeNative 冻结固件原生播放器（mediaplayer）。
+// 原生 TTS 和音乐都走它；我们自己的 TTS 走 miplayer，不受影响。
+func freezeNative(req connect.Request) (connect.Response, error) {
+	pid, err := utils.FreezeNativePlayback()
+	if err != nil {
+		log.Printf("❄️ [rpc] freeze_native 失败 (id=%s): %v", req.ID, err)
+		return connect.ErrorResponse(req.ID, err), nil
+	}
+	log.Printf("❄️ [rpc] freeze_native 完成 (id=%s): pid=%d", req.ID, pid)
+	data, _ := json.Marshal(map[string]any{"pid": pid})
+	return connect.DataResponse(json.RawMessage(data)), nil
+}
+
+// unfreezeNative 解冻 mediaplayer。payload 可选 {"pid": N}，不传就按进程名查找。
+func unfreezeNative(req connect.Request) (connect.Response, error) {
+	pid := 0
+	if req.Payload != nil {
+		var p struct {
+			PID int `json:"pid"`
+		}
+		_ = json.Unmarshal(*req.Payload, &p)
+		pid = p.PID
+	}
+	if err := utils.UnfreezeNativePlayback(pid); err != nil {
+		log.Printf("☀️ [rpc] unfreeze_native 失败 (id=%s): %v", req.ID, err)
+		return connect.ErrorResponse(req.ID, err), nil
+	}
+	log.Printf("☀️ [rpc] unfreeze_native 完成 (id=%s): pid=%d", req.ID, pid)
+	return connect.SuccessResponse(), nil
+}
+
+// nativePlaybackState 查询 mediaplayer 的 pid 与冻结状态，供服务端复核。
+func nativePlaybackState(_ connect.Request) (connect.Response, error) {
+	pid, stopped := utils.NativePlaybackState()
+	data, _ := json.Marshal(map[string]any{"pid": pid, "stopped": stopped, "running": pid > 0})
+	return connect.DataResponse(json.RawMessage(data)), nil
+}
+
 func stopTTS(req connect.Request) (connect.Response, error) {
 	start := time.Now()
 	log.Printf("⏹️ [rpc] stop_tts 收到 (id=%s): 终止当前 TTS/播放", req.ID)
@@ -454,6 +496,18 @@ func stopPlay(_ connect.Request) (connect.Response, error) {
 	if err := audio.GetPlayer().Stop(); err != nil {
 		return connect.Response{}, err
 	}
+	return connect.SuccessResponse(), nil
+}
+
+// nativeContinueDialog 让固件原生助手重新打开一次收音（ASR-only 续听）。
+// 用 pnshelper 的 src=1,event=0：实测会新建一个 Recognize 会话，由原生 VAD 判停。
+func nativeContinueDialog(_ connect.Request) (connect.Response, error) {
+	if _, err := utils.RunShellWithTimeout(
+		`ubus -t 2 call pnshelper event_notify '{"src":1,"event":0}'`, 3*time.Second); err != nil {
+		log.Printf("🎤 [rpc] native_continue_dialog 失败: %v", err)
+		return connect.Response{}, err
+	}
+	log.Printf("🎤 [rpc] native_continue_dialog：已请求原生续听")
 	return connect.SuccessResponse(), nil
 }
 

@@ -108,7 +108,7 @@ ssh -o IPQoS=none -o HostKeyAlgorithms=ssh-rsa -o PubkeyAcceptedAlgorithms=ssh-r
 /data/init.sh                 → exec /data/open-xiaoai/boot.sh
 /data/open-xiaoai/
   boot.sh                     等网络就绪后拉起 init.sh
-  init.sh                     守护进程：单实例锁 / 崩溃重启 / status / stop / upgrade
+  init.sh                     守护进程：单实例锁 / 崩溃重启 / status / stop / upgrade / AEC 参考通道准备
   client                      linux/arm/v7 静态二进制
   server.txt                  启动参数
 ```
@@ -124,10 +124,15 @@ ssh -o IPQoS=none -o HostKeyAlgorithms=ssh-rsa -o PubkeyAcceptedAlgorithms=ssh-r
 ```bash
 # 传输建议：Mac 上起 python3 -m http.server，音箱 wget 拉（比 scp 稳）
 wget -O /data/open-xiaoai/client.new http://<mac-ip>:8000/client
+wget -O /data/open-xiaoai/init.sh.new http://<mac-ip>:8000/init.sh   # 启动脚本也要一起更新
+chmod +x /data/open-xiaoai/init.sh.new && sh -n /data/open-xiaoai/init.sh.new
 /data/open-xiaoai/init.sh stop
 cp /data/open-xiaoai/client.new /data/open-xiaoai/client
+mv /data/open-xiaoai/init.sh.new /data/open-xiaoai/init.sh
 /data/open-xiaoai/init.sh daemon
 ```
+
+`init.sh` 里包含 AEC 参考通道的准备工作（`prepare_aec_reference`）。只换 `client` 不换 `init.sh`，老设备不会重启 pns，AEC 参考通道等于没开——表现就是“放歌时怎么喊都没反应”。
 
 改过 `server.txt` 后同样需要 `stop` + `daemon`，`upgrade` 会沿用旧参数。
 
@@ -439,6 +444,9 @@ YAML 缩进必须是 `homeassistant:` 下两空格；粘贴丢缩进会变成顶
 | 局域网连不上 4399 | Windows 防火墙未放行 |
 | `.bat` 不执行 | 行尾是 LF，必须 CRLF |
 | 叫了没反应 / ASR 乱码 | Python 输出 GBK；worker 强制 UTF-8 |
+| 音乐大声时叫不醒 / ASR 没反应 | 查 `amixer -c 0 sget 'Loopback Enable'` 是否为 Enable，以及 `/tmp/xiaoai-aec.ready` 里的 pid 是否等于 `pidof mipns-xiaomi`；不一致就 `/data/open-xiaoai/init.sh restart`（该准备只在通过 `init.sh` 启动时执行，直接跑 client 不会做）。完整记录见 [音频链路与原生 ASR 逆向](device-audio-aec-native-asr.md) |
+| 喊「小爱同学」后小爱还是自己回答 | 确认 `native_wake.takeover_enabled: true`，且音箱端 client 已升级到带 `freeze_native` 的版本并 `init.sh restart`；日志里应有 `❄️ 原生唤醒接管`。失败时会打印 `⚠️ 原生唤醒接管失败` 并回退原生 |
+| 接管后音乐一直不恢复 | 单轮上限 `native_wake.max_seconds`（默认 25 秒）到点会强制解冻；日志找 `☀️ 原生唤醒接管结束`。若设备播放器被外部 `SIGCONT`，会打印 `❄️ 播放器被外部解冻，已重新冻结` |
 | 音箱和小爱同时说话 | 未调 `stop_native`；客户端需带压制窗口 |
 | 刷完 SSH 不通 | `mksquashfs` 丢了 `/dev/console` |
 | 刷机抓不到设备 | macOS 抓不到 U-Boot，换 Windows + 驱动 + libdll 修复 |

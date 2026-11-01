@@ -218,6 +218,20 @@ const SECTIONS: SectionDef[] = [
         hint: '0-100，建议 30-40；留空用默认 35',
       },
       {
+        path: ['native_wake', 'takeover_enabled'],
+        label: '「小爱同学」唤醒后交给豆包',
+        type: 'bool',
+        defaultBool: false,
+        hint: '仅音乐播放中生效：冻结设备原生播放（原生回答和音乐一起停），由豆包接管这一轮',
+      },
+      {
+        path: ['native_wake', 'max_seconds'],
+        label: '接管最长时长（秒）',
+        type: 'number',
+        placeholder: '25',
+        hint: '超时强制解冻，避免音乐永久停住',
+      },
+      {
         path: ['music_router', 'engine'],
         label: '音乐态路由',
         type: 'select',

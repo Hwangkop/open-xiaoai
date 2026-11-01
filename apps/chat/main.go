@@ -6,6 +6,8 @@ import (
 	"log"
 	"path/filepath"
 	"time"
+
+	"github.com/cxjava/open-xiaoai/apps/client/services/connect"
 )
 
 func main() {
@@ -72,7 +74,21 @@ func main() {
 	log.Printf("   管理 API: http://%s:%d/admin/api/", cfg.Server.Host, cfg.Server.Port)
 	log.Printf("   前端页面: apps/chat/web/index.html（可单独部署，填入 API 地址即可）")
 
+	go clearStaleNativeFreeze()
+
 	if err := startServer(ctx, app); err != nil {
 		log.Fatalf("❌ server error: %v", err)
+	}
+}
+
+// clearStaleNativeFreeze 启动自检：上一次进程可能在接管途中退出，
+// 设备播放器还停在 SIGSTOP。等客户端连上后解冻一次（对正常播放是无害的 SIGCONT）。
+func clearStaleNativeFreeze() {
+	for i := 0; i < 15; i++ {
+		time.Sleep(2 * time.Second)
+		if _, err := connect.GetRPC().CallRemote("unfreeze_native", map[string]int{"pid": 0}, &nativeTakeoverRPCTimeoutMs); err == nil {
+			log.Printf("🧹 启动自检：已清除可能残留的原生播放冻结")
+			return
+		}
 	}
 }

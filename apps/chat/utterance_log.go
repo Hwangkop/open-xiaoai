@@ -10,10 +10,11 @@ import (
 
 type utteranceRecord struct {
 	Text    string `json:"text"`
-	At      int64  `json:"at"`      // unix 毫秒
-	Matched bool   `json:"matched"` // 是否命中唤醒词
-	Ack     bool   `json:"ack"`     // 命中后是"只应一声"还是当问题处理
-	Dialog  bool   `json:"dialog"`  // 对话窗口内的句子（唤醒监听已关闭）
+	At      int64  `json:"at"`               // unix 毫秒
+	Matched bool   `json:"matched"`          // 是否命中唤醒词
+	Ack     bool   `json:"ack"`              // 命中后是"只应一声"还是当问题处理
+	Dialog  bool   `json:"dialog"`           // 对话窗口内的句子（唤醒监听已关闭）
+	Source  string `json:"source,omitempty"` // pc=服务端唤醒 ASR；xiaoai=小爱原生 ASR
 }
 
 var recentUtterances = struct {

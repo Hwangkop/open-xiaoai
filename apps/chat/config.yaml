@@ -271,6 +271,14 @@ music_duck:
   enabled: true
   volume: 35   # 压到的音量 0-100
 
+# 原生唤醒接管（音乐态）。音乐大声时只有原生 KWS 听得见「小爱同学」，
+# 打开后：原生 ASR 出 final → 冻结设备播放器（原生 TTS 和音乐一起停）
+# → 文本交给豆包、用我们自己的 TTS 播 → 播完解冻并继续放歌。
+# 代价是原生小爱在这轮不出声；家电类指令仍按 native_keywords 交还原生。
+native_wake:
+  takeover_enabled: false  # 默认关；实机验收通过后再打开
+  max_seconds: 25          # 单轮接管上限，超时强制解冻，避免音乐永久停住
+
 # 音乐态语义路由：**只有带唤醒词的话才进这里**（歌词不可能含唤醒词，所以不带唤醒词
 # 的句子只会走本地白名单，其余直接丢弃，不花模型钱）。模型判意图：
 # next / stop / volume_up / volume_down / mute / unmute / play / dialog / ignore。

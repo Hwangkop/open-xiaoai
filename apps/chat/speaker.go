@@ -32,6 +32,7 @@ type playState struct {
 	pendingURL    string
 	immediatePlay bool        // 路由等"没有 AI 回复"的场景：点歌要立刻起播
 	musicEnded    func() bool // 一首歌自然播完时调用：返回 true 表示已接上下一首
+	nativeASR     bool        // 原生 ASR 窗口：期间播放器会被停，不能当成歌播完
 
 	// 降音量（ducking）
 	duckEnabled  bool
@@ -62,6 +63,13 @@ type Speaker struct {
 	// 音量读写；测试里替换成假实现，nil 时走设备 shell。
 	volumeGet func() (int, error)
 	volumeSet func(int) error
+
+	// nativeTakeover 原生唤醒接管状态（见 speaker_native_takeover.go）
+	nativeTakeover nativeTakeoverState
+	// 下面三个用于测试替换；nil 时走客户端 RPC
+	nativeFreeze   func() (int, error)
+	nativeUnfreeze func(int) error
+	nativeStateFn  func() (int, bool, error)
 }
 
 var stopTTSTimeoutMs uint64 = 1500
@@ -113,8 +121,14 @@ func (s *Speaker) markSpeaking(on bool) {
 
 	// 播报会抢占音频设备，musicplayer 被顶成暂停；说完把音乐接回去。
 	// 只在"播报前就在放音乐"时做，避免把用户已经停掉的歌重新放出来。
-	if !on && musicOn {
-		go s.resumeMusicAfterSpeech()
+	if !on {
+		if s.TakeoverActive() {
+			// 接管期间播放器是被冻住的，解冻后会从原位置继续，不需要 resume/重拉。
+			// 不放歌时也要走这里，否则冻结会一直挂到超时才解。
+			go s.EndNativeTakeover("回答结束")
+		} else if musicOn {
+			go s.resumeMusicAfterSpeech()
+		}
 	}
 }
 
@@ -535,6 +549,72 @@ func (s *Speaker) musicEndedHandler() func() bool {
 	s.stMu.Lock()
 	defer s.stMu.Unlock()
 	return s.st.musicEnded
+}
+
+// BeginNativeASRWindow 标记"原生 ASR 正在开麦"。
+// 原生 dialog 会把 mediaplayer 停下来听，这段时间设备空闲并不代表歌播完了；
+// 必须暂停自动续播，否则会一首接一首地跳。
+func (s *Speaker) BeginNativeASRWindow() {
+	s.stMu.Lock()
+	s.st.nativeASR = true
+	s.stMu.Unlock()
+	log.Printf("🎙️ 原生 ASR 窗口打开，暂停自动续播")
+}
+
+// NativeASRWindow 当前是否处于原生 ASR 窗口。
+func (s *Speaker) NativeASRWindow() bool {
+	s.stMu.Lock()
+	defer s.stMu.Unlock()
+	return s.st.nativeASR
+}
+
+// EndNativeASRWindow 关闭原生 ASR 窗口，并把被原生 dialog 停掉的当前曲目接回来。
+// 不切下一首：窗口只是"停下来听"，歌并没有播完。
+func (s *Speaker) EndNativeASRWindow() {
+	s.stMu.Lock()
+	if !s.st.nativeASR {
+		s.stMu.Unlock()
+		return
+	}
+	s.st.nativeASR = false
+	url := s.st.musicURL
+	playing := s.st.music
+	if playing {
+		// 先重置起播时间：恢复动作（查状态/重拉 URL）期间 tracker 看到的是宽限期，
+		// 不会把"窗口刚结束"又当成歌播完。
+		s.st.musicStart = time.Now()
+	}
+	s.stMu.Unlock()
+	if !playing || url == "" {
+		return
+	}
+
+	if res, err := s.runShell("ubus -t 2 call mediaplayer player_get_play_status", 3000); err == nil && res != nil {
+		switch mediaPlayerStatus(res.Stdout) {
+		case 1:
+			s.stMu.Lock()
+			s.st.musicStart = time.Now()
+			s.stMu.Unlock()
+			return
+		case 2:
+			if _, err := s.runShell(`ubus -t 3 call mediaplayer player_play_operation '{"action":"play","media":"common"}'`, 4000); err == nil {
+				s.stMu.Lock()
+				s.st.musicStart = time.Now()
+				s.stMu.Unlock()
+				log.Printf("🎵 原生识别结束，音乐继续")
+				return
+			}
+		}
+	}
+
+	if err := s.PlayURL(url, false); err != nil {
+		log.Printf("⚠️ 原生识别结束恢复音乐失败: %v", err)
+		return
+	}
+	s.stMu.Lock()
+	s.st.musicStart = time.Now()
+	s.stMu.Unlock()
+	log.Printf("🎵 原生识别结束，重新拉起当前曲目")
 }
 
 // MusicPlaying 当前是否在放音乐（MCP 播放的歌）。
@@ -1013,6 +1093,16 @@ func (s *Speaker) trackMusic() {
 		s.stMu.Unlock()
 		// 播报期间设备本来就会停，别把这个当成"音乐结束了"
 		if s.Speaking() {
+			idle = 0
+			continue
+		}
+		// 原生 ASR 开麦时播放器会被停；这段空闲不是歌播完，不能自动切歌
+		if s.NativeASRWindow() {
+			idle = 0
+			continue
+		}
+		// 接管原生唤醒时播放器被冻住，ubus 调用会挂起；这里直接跳过，解冻后再恢复轮询
+		if s.TakeoverActive() {
 			idle = 0
 			continue
 		}

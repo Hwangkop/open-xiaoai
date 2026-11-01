@@ -276,6 +276,37 @@ func (a *adminServer) handleDebugMusicState(w http.ResponseWriter, r *http.Reque
 	writeAdminJSON(w, http.StatusOK, out)
 }
 
+// handleDebugNativeASR 开一个原生 ASR 窗口（只允许本机）。
+// 先暂停自动续播：原生 dialog 会停播放器，不暂停就会被误判成“这首歌播完了”。
+// 窗口结束后会把当前曲目接回来，不切下一首。
+func (a *adminServer) handleDebugNativeASR(w http.ResponseWriter, r *http.Request) {
+	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if host != "127.0.0.1" && host != "::1" && host != "::ffff:127.0.0.1" {
+		http.Error(w, "只允许本机访问", http.StatusForbidden)
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeAdminError(w, http.StatusMethodNotAllowed, "不支持的方法")
+		return
+	}
+	var req struct {
+		DurationMs int `json:"duration_ms"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req)
+	if req.DurationMs <= 0 || req.DurationMs > 20000 {
+		req.DurationMs = 10000
+	}
+	a.speaker.BeginNativeASRWindow()
+	go func() {
+		defer a.speaker.EndNativeASRWindow()
+		if _, err := a.speaker.runShell(`ubus -t 2 call pnshelper event_notify '{"src":1,"event":0}'`, 5000); err != nil {
+			log.Printf("⚠️ 原生 ASR 开窗失败: %v", err)
+		}
+		time.Sleep(time.Duration(req.DurationMs) * time.Millisecond)
+	}()
+	writeAdminJSON(w, http.StatusOK, map[string]any{"ok": true, "duration_ms": req.DurationMs})
+}
+
 // handleDebugRoute 只跑音乐态意图路由，不执行任何动作（只允许本机）。
 // 用来观察路由器对真实说法的判断质量，调 prompt / 阈值时不用真放音乐。
 func (a *adminServer) handleDebugRoute(w http.ResponseWriter, r *http.Request) {

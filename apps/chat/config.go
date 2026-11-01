@@ -245,6 +245,17 @@ type MusicDuckConfig struct {
 	Volume int `yaml:"volume"`
 }
 
+// NativeWakeConfig 原生唤醒接管（音乐态）。
+//
+// 音乐大声时只有原生 KWS 听得见「小爱同学」，但它会让小爱继续回答。
+// 打开这个开关后，原生 ASR 出 final 时冻结设备播放器（原生 TTS 和音乐一起停），
+// 由豆包接管这一轮对话，播完再解冻。详见 docs/device-audio-aec-native-asr.md。
+type NativeWakeConfig struct {
+	Enabled bool `yaml:"takeover_enabled"`
+	// MaxSeconds 单轮接管的最长时长（秒），超时强制解冻，避免音乐永久停住。<=0 用默认 25。
+	MaxSeconds int `yaml:"max_seconds"`
+}
+
 type AppConfig struct {
 	Server         ServerConfig    `yaml:"server"`
 	Auth           AuthConfig      `yaml:"auth"`
@@ -279,6 +290,7 @@ type AppConfig struct {
 	ASR                 ASRConfig           `yaml:"asr"`
 	Music               music.MusicConfig   `yaml:"music"`
 	MusicDuck           MusicDuckConfig     `yaml:"music_duck"`
+	NativeWake          NativeWakeConfig    `yaml:"native_wake"`
 	MusicRouter         MusicRouterConfig   `yaml:"music_router"`
 	Search              SearchConfig        `yaml:"search"`
 	HomeAssistant       HomeAssistantConfig `yaml:"homeassistant"`
@@ -338,6 +350,10 @@ func defaultConfig() *AppConfig {
 		MusicDuck: MusicDuckConfig{
 			Enabled: true,
 			Volume:  defaultMusicDuckVolume,
+		},
+		NativeWake: NativeWakeConfig{
+			Enabled:    false, // 默认关闭，验收后再打开
+			MaxSeconds: 25,
 		},
 		MusicRouter: MusicRouterConfig{
 			Enabled:       true,

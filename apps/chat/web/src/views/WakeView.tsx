@@ -24,6 +24,7 @@ interface Utterance {
   matched: boolean
   ack: boolean
   dialog?: boolean
+  source?: string
 }
 
 interface RouteStats {
@@ -314,63 +315,78 @@ export function WakeView({ onNotify, onError }: Props) {
         <CardContent className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
           {recent.length === 0 ? (
             <div className="text-sm text-muted-foreground">
-              还没有记录。对着音箱说几句话，这里会显示 ASR 识别出的原文。
+              还没有记录。对着音箱说几句话，这里会显示 PC ASR 和小爱原生 ASR 的原文。
             </div>
           ) : (
-            recent.map((u, i) => (
-              <div
-                key={`${u.at}-${i}`}
-                onClick={() => {
-                  setTestText(u.text)
-                  void (async () => {
-                    setTesting(true)
-                    setResult(null)
-                    try {
-                      const res = await api<WakeTest>(
-                        `/admin/api/wake/test?text=${encodeURIComponent(u.text)}`,
-                      )
-                      setResult(res)
-                    } catch (err) {
-                      onError(err)
-                    } finally {
-                      setTesting(false)
-                    }
-                  })()
-                }}
-                title="点击测试这句话"
-                className="flex cursor-pointer items-center gap-2 rounded-md border border-border/40 px-3 py-2 text-sm transition-colors hover:border-foreground/60 hover:bg-foreground/[0.06]"
-              >
-                <span className="w-14 shrink-0 text-xs text-muted-foreground">
-                  {new Date(u.at).toLocaleTimeString('zh-CN', { hour12: false })}
-                </span>
-                <span className="min-w-0 flex-1 truncate" title={u.text}>
-                  {u.text}
-                </span>
-                {u.dialog ? (
-                  <Badge variant="outline" className="shrink-0 text-xs">
-                    对话
-                  </Badge>
-                ) : u.matched ? (
-                  <Badge variant="secondary" className="shrink-0 text-xs">
-                    {u.ack ? '唤醒' : '命中'}
-                  </Badge>
-                ) : (
-                  <>
-                    <Badge variant="outline" className="shrink-0 text-xs text-muted-foreground">
-                      未命中
+            recent.map((u, i) => {
+              const isXiaoai = u.source === 'xiaoai'
+              return (
+                <div
+                  key={`${u.at}-${i}`}
+                  onClick={
+                    isXiaoai
+                      ? undefined
+                      : () => {
+                          setTestText(u.text)
+                          void (async () => {
+                            setTesting(true)
+                            setResult(null)
+                            try {
+                              const res = await api<WakeTest>(
+                                `/admin/api/wake/test?text=${encodeURIComponent(u.text)}`,
+                              )
+                              setResult(res)
+                            } catch (err) {
+                              onError(err)
+                            } finally {
+                              setTesting(false)
+                            }
+                          })()
+                        }
+                  }
+                  title={isXiaoai ? '小爱原生 ASR（有 AEC，音乐大声时也能听清）' : '点击测试这句话'}
+                  className={`flex items-center gap-2 rounded-md border border-border/40 px-3 py-2 text-sm transition-colors ${
+                    isXiaoai
+                      ? ''
+                      : 'cursor-pointer hover:border-foreground/60 hover:bg-foreground/[0.06]'
+                  }`}
+                >
+                  <span className="w-14 shrink-0 text-xs text-muted-foreground">
+                    {new Date(u.at).toLocaleTimeString('zh-CN', { hour12: false })}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate" title={u.text}>
+                    {u.text}
+                  </span>
+                  {isXiaoai ? (
+                    <Badge variant="outline" className="shrink-0 text-xs">
+                      小爱 ASR
                     </Badge>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 shrink-0 px-2 text-xs"
-                      onClick={() => void addWord(u.text)}
-                    >
-                      加为唤醒词
-                    </Button>
-                  </>
-                )}
-              </div>
-            ))
+                  ) : u.dialog ? (
+                    <Badge variant="outline" className="shrink-0 text-xs">
+                      对话
+                    </Badge>
+                  ) : u.matched ? (
+                    <Badge variant="secondary" className="shrink-0 text-xs">
+                      {u.ack ? '唤醒' : '命中'}
+                    </Badge>
+                  ) : (
+                    <>
+                      <Badge variant="outline" className="shrink-0 text-xs text-muted-foreground">
+                        未命中
+                      </Badge>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 shrink-0 px-2 text-xs"
+                        onClick={() => void addWord(u.text)}
+                      >
+                        加为唤醒词
+                      </Button>
+                    </>
+                  )}
+                </div>
+              )
+            })
           )}
         </CardContent>
       </Card>
