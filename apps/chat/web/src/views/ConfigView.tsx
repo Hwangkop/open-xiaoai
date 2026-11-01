@@ -84,12 +84,32 @@ const SECTIONS: SectionDef[] = [
   },
   {
     title: '语音识别',
-    // 引擎选择只在「唤醒与识别」页维护（那里能热切换并写回本文件），
-    // 这里只留启动相关的开关和密钥，避免同一个设置两处显示、两处不同步。
-    desc: '启动开关与密钥；具体用哪个引擎去「唤醒与识别」页切换',
+    desc: '唤醒监听和唤醒之后的识别分开配置（保存即热生效）',
     icon: Mic,
     fields: [
       { path: ['asr', 'enabled'], label: '启用服务端唤醒', type: 'bool' },
+      {
+        path: ['asr', 'wake_provider'],
+        label: '唤醒监听',
+        type: 'select',
+        options: [
+          { value: 'local', label: 'SenseVoice + Paraformer 兜底' },
+          { value: 'local_alt', label: 'SenseVoice' },
+          { value: 'doubao_stream', label: '火山引擎流式' },
+          { value: 'doubao', label: '火山引擎整段' },
+        ],
+      },
+      {
+        path: ['asr', 'dialog_provider'],
+        label: '唤醒之后的识别',
+        type: 'select',
+        options: [
+          { value: 'local_alt', label: 'SenseVoice + Paraformer 兜底' },
+          { value: 'local', label: 'SenseVoice' },
+          { value: 'doubao_stream', label: '火山引擎非流式' },
+          { value: 'doubao', label: '火山引擎整段' },
+        ],
+      },
       { path: ['asr', 'api_key'], label: '火山引擎 API Key', type: 'password' },
     ],
   },
@@ -129,6 +149,23 @@ const SECTIONS: SectionDef[] = [
         type: 'number',
         placeholder: '35',
         hint: '0-100，建议 30-40；留空用默认 35',
+      },
+      {
+        path: ['music_router', 'engine'],
+        label: '音乐态路由',
+        type: 'select',
+        options: [
+          { value: 'llm', label: '工具路由 / 分类器优先（快）' },
+          { value: 'codex', label: '全部交给 codex 线程（慢但工具全）' },
+        ],
+        hint: '只在放音乐且带唤醒词时生效',
+      },
+      {
+        path: ['music_router', 'min_confidence'],
+        label: '路由置信度门槛',
+        type: 'number',
+        placeholder: '0.6',
+        hint: '低于这个值不执行动作',
       },
     ],
   },

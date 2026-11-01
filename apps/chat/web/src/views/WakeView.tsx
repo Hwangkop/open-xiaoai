@@ -98,12 +98,6 @@ interface ASRInfo {
 }
 
 // 唤醒之后的识别可选哪几套引擎
-const ASR_OPTIONS: { key: string; label: string; hint: string }[] = [
-  { key: 'local_alt', label: 'SenseVoice + Paraformer', hint: '本地，快；短句或没听清时用 Paraformer 补一遍' },
-  { key: 'local', label: 'SenseVoice', hint: '本地，最快，纯离线' },
-  { key: 'doubao_stream', label: '火山引擎流式', hint: '云端，边说边出字，最终结果约 0.2 秒' },
-  { key: 'doubao', label: '火山引擎非流式', hint: '云端，整段识别，准确但慢（1.3 秒以上）' },
-]
 
 export function WakeView({ onNotify, onError }: Props) {
   const [data, setData] = useState<WakeList>({ custom: [], defaults: [], weak: [] })
@@ -117,7 +111,6 @@ export function WakeView({ onNotify, onError }: Props) {
   const [routeItems, setRouteItems] = useState<RouteEntry[]>([])
   const [routeStats, setRouteStats] = useState<RouteStats | null>(null)
   const [asr, setAsr] = useState<ASRInfo | null>(null)
-  const [asrBusy, setAsrBusy] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -157,25 +150,6 @@ export function WakeView({ onNotify, onError }: Props) {
       /* 忽略：没启用服务端唤醒时这里本来就没有内容 */
     }
   }, [])
-
-  const switchASR = useCallback(
-    async (provider: string) => {
-      setAsrBusy(true)
-      try {
-        const res = await api<ASRInfo>('/admin/api/asr', {
-          method: 'POST',
-          body: JSON.stringify({ provider }),
-        })
-        setAsr(res)
-        onNotify(`对话识别已切换到 ${res.labels?.[provider] || provider}`, 'success')
-      } catch (err) {
-        onError(err)
-      } finally {
-        setAsrBusy(false)
-      }
-    },
-    [onError, onNotify],
-  )
 
   useEffect(() => {
     void load()
@@ -505,43 +479,27 @@ export function WakeView({ onNotify, onError }: Props) {
           <CardTitle className="flex items-center gap-2 text-sm">
             <AudioLines className="size-4" /> 识别引擎
             <span className="text-xs font-normal text-muted-foreground">
-              （热生效，不用重启）
+              （在「配置 → 语音识别」里改，保存即热生效）
             </span>
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
+        <CardContent className="space-y-1 text-sm">
           {asr && !asr.enabled ? (
-            <div className="text-sm text-muted-foreground">
-              {asr.message || '服务端唤醒未启用'}
-            </div>
+            <div className="text-muted-foreground">{asr.message || '服务端唤醒未启用'}</div>
           ) : (
             <>
-              <div className="text-xs text-muted-foreground">
+              <div>
                 唤醒监听：
-                {asr?.labels?.[asr?.wake_provider || ''] || asr?.wake_provider || '—'}
-                （快；没听准时用 Paraformer 再认一次）
+                <span className="text-muted-foreground">
+                  {asr?.labels?.[asr?.wake_provider || ''] || asr?.wake_provider || '—'}
+                </span>
               </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {ASR_OPTIONS.map((o) => {
-                  const selected = asr?.dialog_provider === o.key
-                  const usable = (asr?.available || []).includes(o.key)
-                  return (
-                    <Button
-                      key={o.key}
-                      size="sm"
-                      variant={selected ? 'default' : 'outline'}
-                      className="h-auto whitespace-normal px-2 py-1.5 text-xs leading-tight"
-                      disabled={asrBusy || !usable}
-                      title={o.hint}
-                      onClick={() => void switchASR(o.key)}
-                    >
-                      {selected && <CheckCircle2 className="size-3.5" />}
-                      {o.label}
-                    </Button>
-                  )
-                })}
+              <div>
+                唤醒之后的识别：
+                <span className="text-muted-foreground">
+                  {asr?.labels?.[asr?.dialog_provider || ''] || asr?.dialog_provider || '—'}
+                </span>
               </div>
-              <div className="text-xs text-muted-foreground">唤醒之后那句话用哪套引擎识别。</div>
             </>
           )}
         </CardContent>
