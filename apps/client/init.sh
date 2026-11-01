@@ -37,9 +37,80 @@ resolve_args() {
     ARGS="$*"
 }
 
+# ---------- AEC 参考通道 ----------
+# 固件 AEC 的第 7 个输入平面是播放参考；`Loopback Enable` 默认 Disable 时参考恒为 0，
+# AEC 直接跳过，放歌时人声会被音乐盖住。切换必须让 PDM 采集**重新打开**才生效，
+# 而开机时 pns 已经在 rc.local 之前起来过，所以这里设置完要把 pns 重启一次。
+# /tmp/xiaoai-aec.ready 记录“已经为哪个 mipns pid 准备过”，避免重复重启。
+aec_log() {
+    echo "$*"
+    [ -n "${LOG:-}" ] && echo "[$(now)] $*" >>"$LOG"
+}
+
+prepare_aec_reference() {
+    mixer=""
+    for bin in /usr/bin/amixer /usr/sbin/amixer; do
+        [ -x "$bin" ] && { mixer="$bin"; break; }
+    done
+    if [ -z "$mixer" ] && command -v amixer >/dev/null 2>&1; then
+        mixer=amixer
+    fi
+    [ -n "$mixer" ] || { aec_log "⚠️ 找不到 amixer，跳过 AEC 参考通道" >&2; return 0; }
+
+    prev=$("$mixer" -c 0 sget 'Loopback Enable' 2>/dev/null | sed -n "s/^ *Item0: '\([^']*\)'.*/\1/p")
+    case "$prev" in Enable | Disable) ;; *)
+        aec_log "⚠️ 找不到 Loopback Enable 控制项，跳过 AEC 参考通道" >&2
+        return 0
+        ;;
+    esac
+
+    pid=$(pidof mipns-xiaomi 2>/dev/null)
+    marker=/tmp/xiaoai-aec.ready
+    # 只有“控制项已经是 Enable”且“当前 mipns 就是上次处理过的那个”才跳过；
+    # 只信 marker 会漏掉外部把 Loopback 改回 Disable 的情况。
+    if [ "$prev" = Enable ] && [ -n "$pid" ] && [ -f "$marker" ] && [ "$(cat "$marker" 2>/dev/null)" = "$pid" ]; then
+        return 0
+    fi
+
+    if [ "$prev" != Enable ]; then
+        "$mixer" -c 0 sset 'Loopback Enable' Enable >/dev/null 2>&1
+        cur=$("$mixer" -c 0 sget 'Loopback Enable' 2>/dev/null | sed -n "s/^ *Item0: '\([^']*\)'.*/\1/p")
+        [ "$cur" = Enable ] || { aec_log "❌ Loopback Enable 设置失败（当前: ${cur:-未知}）" >&2; return 1; }
+    fi
+
+    # 采集已经跑着时再切开关不生效，必须重开一次 PDM 采集
+    if [ -z "$pid" ]; then
+        aec_log "🎚️ AEC 参考通道已开启"
+        return 0
+    fi
+    if [ ! -x /etc/init.d/pns ]; then
+        # 没有 init 脚本就没法让采集重开；不写 marker，下次启动再试
+        aec_log "⚠️ 找不到 /etc/init.d/pns，参考通道已开但采集未重开" >&2
+        return 0
+    fi
+
+    before=$pid
+    /etc/init.d/pns restart >/dev/null 2>&1
+    i=0
+    while [ "$i" -lt 10 ]; do
+        sleep 0.5 2>/dev/null || sleep 1
+        pid=$(pidof mipns-xiaomi 2>/dev/null)
+        [ -n "$pid" ] && [ "$pid" != "$before" ] && break
+        i=$((i + 1))
+    done
+    if [ -n "$pid" ] && [ "$pid" != "$before" ]; then
+        echo "$pid" >"$marker"
+        aec_log "🎚️ AEC 参考通道已开启（已重启 pns 重开采集，mipns=${pid}）"
+    else
+        # restart 失败或没换 pid 时不写 marker，下次启动会重试
+        aec_log "⚠️ pns 重启后 mipns 没有换 pid（当前: ${pid:-无}），AEC 可能没重开" >&2
+    fi
+    return 0
+}
+
 # ---------- 预检 ----------
 preflight() {
-    [ -f "$CLIENT" ] || die "预检失败[二进制]: 找不到 $CLIENT，请先下载 client"
+    [ -f "$CLIENT" ] || die "预检失败[二进制]: 找不到 ${CLIENT}，请先下载 client"
     [ -x "$CLIENT" ] || die "预检失败[二进制]: $CLIENT 不可执行，请 chmod +x"
     ok=0; n=0
     skip_next=0
@@ -154,6 +225,9 @@ cmd_start() {
     # shellcheck disable=SC2086
     preflight $ARGS
     acquire_lock
+    # 放在取锁之后：已经有一个实例在跑时不要白重启一次 pns。
+    # 参考通道没开时 AEC 等于不工作，但失败不该拦住 client 启动（还有 ducking 兜底）。
+    prepare_aec_reference || echo "⚠️ AEC 参考通道准备失败，继续启动" >&2
     echo "🔥 启动 client: $ARGS (日志: $LOG)"
     supervise
 }

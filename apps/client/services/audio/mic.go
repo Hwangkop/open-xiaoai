@@ -13,13 +13,17 @@ package audio
 //   3. 48kHz 降到 16kHz（每 3 个样点取均值）
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"math"
+	"os"
 	"os/exec"
+	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -39,6 +43,40 @@ type MicStreamer struct {
 	done   chan struct{}
 }
 
+// enableAECReference 打开声卡的回声参考通道（AEC 的第 7 个输入平面）。
+// 只在采集启动前调用有效；采集已经跑起来后再切，要重新打开 PDM 才会生效
+// （init.sh 会在启动 client 前设置并重启一次 pns）。
+// 这里再用 sget 回读一次：sset 可能因为控制项不存在或驱动拒绝而静默失败。
+func enableAECReference() {
+	if out, err := amixerRun("-c", "0", "sset", "Loopback Enable", "Enable"); err != nil {
+		log.Printf("⚠️ 开启 AEC 参考通道失败（Loopback Enable）: %v %s", err, strings.TrimSpace(out))
+		return
+	}
+	out, err := amixerRun("-c", "0", "sget", "Loopback Enable")
+	if err != nil {
+		log.Printf("⚠️ 无法回读 AEC 参考通道状态: %v", err)
+		return
+	}
+	if !strings.Contains(out, "Item0: 'Enable'") {
+		log.Printf("⚠️ AEC 参考通道未生效（Loopback Enable 不是 Enable）: %s", strings.TrimSpace(out))
+		return
+	}
+	// 这里只能确认 mixer 值；要让 AEC 真正重开采集，还得靠 init.sh 重启 pns
+	log.Printf("🎚️ Loopback Enable 已设为 Enable（需 pns 重开采集才生效）")
+}
+
+// amixerRun 带超时调用 amixer：驱动卡住时不能把 client 启动一起挂死。
+func amixerRun(args ...string) (string, error) {
+	amixer := "amixer"
+	if st, err := os.Stat("/usr/bin/amixer"); err == nil && st.Mode()&0o111 != 0 {
+		amixer = "/usr/bin/amixer"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, amixer, args...).CombinedOutput()
+	return string(out), err
+}
+
 // StartMicStream 启动采集，每 20ms（640 字节）回调一次 onChunk。
 // device 留空用 "noop"（固件定义的共享设备），也可传 "Capture"。
 func StartMicStream(device string, onChunk func([]byte) error) (*MicStreamer, error) {
@@ -48,6 +86,12 @@ func StartMicStream(device string, onChunk func([]byte) error) (*MicStreamer, er
 	if _, err := exec.LookPath("arecord"); err != nil {
 		return nil, fmt.Errorf("找不到 arecord: %w", err)
 	}
+
+	// 回声参考通道：必须在打开 PDM 采集**之前**开启。
+	// 第 7 个输入平面是播放参考，默认 Disable 时参考恒为 0，AEC 会直接跳过。
+	// 注意：AEC 是在 mipns 进程内做的（见 docs/device-audio-aec-native-asr.md），
+	// 我们这路 arecord 读到的仍是带回声的原始 PCM，音乐大声时只能靠 ducking。
+	enableAECReference()
 
 	cmd := exec.Command("arecord",
 		"-q",
