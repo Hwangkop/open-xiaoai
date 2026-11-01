@@ -51,7 +51,7 @@ type Engine struct {
 
 	// 音乐态语义路由的依赖（由管理端注入）
 	musicDesc      func() (song, artists string, volume int)
-	musicPlayQuery func(ctx context.Context, query string) (string, error)
+	musicPlayQuery func(ctx context.Context, query string, shuffle bool) (string, error)
 
 	// codexRouter 非空时，音乐态路由可以升级到 codex 的独立 thread（完整工具集）
 	codexRouter *codexRouter
@@ -780,10 +780,11 @@ func (e *Engine) SetToolAccess(defs func() []openai.Tool, run func(ctx context.C
 }
 
 // SetMusicRouting 注入音乐态语义路由的依赖：
-// desc 提供当前歌曲/音量（给路由 prompt 当上下文），playQuery 按描述搜歌并播放。
+// desc 提供当前歌曲/音量（给路由 prompt 当上下文），playQuery 按描述搜歌并播放
+// （shuffle=true 表示用户要“随机放点”）。
 func (e *Engine) SetMusicRouting(
 	desc func() (song, artists string, volume int),
-	playQuery func(ctx context.Context, query string) (string, error),
+	playQuery func(ctx context.Context, query string, shuffle bool) (string, error),
 ) {
 	e.musicDesc = desc
 	e.musicPlayQuery = playQuery
@@ -911,7 +912,9 @@ func (e *Engine) streamAndPlayOn(ctx context.Context, userText string, forcePlai
 			e.speaker.ClearPendingMusic()
 			return
 		}
-		e.speaker.PlayPendingMusic()
+		if err := e.speaker.PlayPendingMusic(); err != nil {
+			log.Printf("⚠️ 音乐播放失败: %v", err)
+		}
 	}()
 
 	// 豆包 TTS 支持预合成：每句一产出就并行合成，播放器按顺序放，消除句间空档。

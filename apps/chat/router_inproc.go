@@ -23,6 +23,7 @@ const toolRouterPrompt = `你是智能音箱的指令执行器。能用工具办
 2. 需要组织语言回答、闲聊、追问 → 不要调工具，只输出 {"action":"dialog"}
 3. 歌词、电视声、噪声、明显不是跟音箱说话 → 不调工具，只输出 {"action":"ignore"}
 4. 调完工具不要总结，工具返回的文本会直接被播报出去
+5. 用户说“随机”“随便放点”“打乱”时属于随机播放：放推荐用 play_daily；放歌单用 play_playlist（shuffle=true）；按歌手/风格点歌用 play_music（shuffle=true）。不要默认放列表第一首。
 
 一次只调必要的工具，不要连环调用。`
 

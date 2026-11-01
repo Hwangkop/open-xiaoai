@@ -30,7 +30,8 @@ type playState struct {
 	musicURL      string // 当前曲目地址，播报打断后靠它重新拉起
 	musicTracking bool
 	pendingURL    string
-	immediatePlay bool // 路由等"没有 AI 回复"的场景：点歌要立刻起播
+	immediatePlay bool        // 路由等"没有 AI 回复"的场景：点歌要立刻起播
+	musicEnded    func() bool // 一首歌自然播完时调用：返回 true 表示已接上下一首
 
 	// 降音量（ducking）
 	duckEnabled  bool
@@ -506,18 +507,34 @@ func (s *Speaker) ClearPendingMusic() {
 	s.stMu.Unlock()
 }
 
-// PlayPendingMusic 播放待播歌曲；没有就直接返回。
-func (s *Speaker) PlayPendingMusic() {
+// PlayPendingMusic 播放待播歌曲；没有待播就返回 nil。
+func (s *Speaker) PlayPendingMusic() error {
 	s.stMu.Lock()
 	v := s.st.pendingURL
 	s.st.pendingURL = ""
 	s.stMu.Unlock()
 	if v == "" {
-		return
+		return nil
 	}
 	if err := s.PlayMusicURL(v); err != nil {
 		log.Printf("⚠️ 音乐播放失败: %v", err)
+		return err
 	}
+	return nil
+}
+
+// SetMusicEndedHandler 注入"播完自动接下一首"的回调。
+// 返回 true 表示下一首已经起播，轮询继续；false 表示队列到头/失败，退出音乐态。
+func (s *Speaker) SetMusicEndedHandler(fn func() bool) {
+	s.stMu.Lock()
+	s.st.musicEnded = fn
+	s.stMu.Unlock()
+}
+
+func (s *Speaker) musicEndedHandler() func() bool {
+	s.stMu.Lock()
+	defer s.stMu.Unlock()
+	return s.st.musicEnded
 }
 
 // MusicPlaying 当前是否在放音乐（MCP 播放的歌）。
@@ -953,6 +970,15 @@ func (s *Speaker) StartMusicTracking() {
 	}
 }
 
+// trackMusic 轮询设备状态：一首播完自动接队列里的下一首，队列到头才退出音乐态。
+//
+// 轮询间隔 1s：歌曲结束后最多两秒就要接上，不然听感上就是"断了一截"。
+// 起播后 5s 内不判停——设备刚接到新 URL 时状态还不稳定，容易误判成空闲。
+const (
+	musicEndGrace     = 5 * time.Second
+	musicEndIdleTicks = 2
+)
+
 func (s *Speaker) trackMusic() {
 	defer func() {
 		s.stMu.Lock()
@@ -960,7 +986,7 @@ func (s *Speaker) trackMusic() {
 		s.stMu.Unlock()
 	}()
 	idle := 0
-	t := time.NewTicker(4 * time.Second)
+	t := time.NewTicker(time.Second)
 	defer t.Stop()
 	deadline := time.Now().Add(2 * time.Hour)
 	defer s.RestoreMusicVolume() // 自然播完/超时也要把音量还原
@@ -980,23 +1006,38 @@ func (s *Speaker) trackMusic() {
 			s.stMu.Unlock()
 			return
 		}
+		// 刚起播的几秒不判停（自动续播接下一首时尤其明显）
+		if time.Since(startedAt) < musicEndGrace {
+			idle = 0
+			continue
+		}
 		res, err := s.runShell("ubus -t 2 call mediaplayer player_get_play_status", 3000)
 		if err != nil || res == nil || strings.TrimSpace(res.Stdout) == "" {
 			continue // 连接抖动，下一轮再看
 		}
-		if mediaPlayerStatus(res.Stdout) == 1 {
+		status := mediaPlayerStatus(res.Stdout)
+		if status == 1 {
 			idle = 0
 			continue
 		}
 		idle++
-		if idle >= 2 {
-			s.stMu.Lock()
-			s.st.music = false
-			s.st.musicStart = time.Time{}
-			s.stMu.Unlock()
-			log.Printf("🎵 音乐已停止")
-			return
+		if idle < musicEndIdleTicks {
+			continue
 		}
+		// 只有设备"空闲"才算自然播完；暂停（物理按键）不自动切歌，照旧按停止处理
+		if status == 0 {
+			if next := s.musicEndedHandler(); next != nil && next() {
+				idle = 0
+				log.Printf("🎵 自动续播下一首")
+				continue
+			}
+		}
+		s.stMu.Lock()
+		s.st.music = false
+		s.st.musicStart = time.Time{}
+		s.stMu.Unlock()
+		log.Printf("🎵 音乐已停止")
+		return
 	}
 }
 

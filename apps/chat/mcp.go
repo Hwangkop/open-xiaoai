@@ -126,12 +126,13 @@ func mcpToolList() []mcpTool {
 	return []mcpTool{
 		{
 			Name:        "play_music",
-			Description: "在音箱上播放音乐。传 query 直接搜索并播放；或先 search_music 再传 index 播第 N 首。",
+			Description: "在音箱上播放音乐。传 query 直接搜索并播放；或先 search_music 再传 index 播第 N 首。用户说“随便来点/随机放点/打乱”时把 shuffle 设为 true（没有指定具体某首歌时），会从搜索结果里随机挑一首起播，不会总是第一首。",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"query": map[string]any{"type": "string", "description": "搜索关键词：歌名/歌手/组合"},
-					"index": map[string]any{"type": "number", "description": "search_music 候选里的序号（从 1 开始）"},
+					"query":   map[string]any{"type": "string", "description": "搜索关键词：歌名/歌手/组合/风格"},
+					"index":   map[string]any{"type": "number", "description": "search_music 候选里的序号（从 1 开始）"},
+					"shuffle": map[string]any{"type": "boolean", "description": "true=从搜索结果里随机挑一首起播（用户说随便来点/随机放点时用）；指定了具体歌名时不要用"},
 				},
 			},
 		},
@@ -148,18 +149,19 @@ func mcpToolList() []mcpTool {
 		},
 		{
 			Name:        "play_playlist",
-			Description: "播放网易云歌单。name 传歌单名（先 list_playlists 确认），「我喜欢」「收藏」会对应我喜欢的音乐。",
+			Description: "播放网易云歌单。name 传歌单名（先 list_playlists 确认），「我喜欢」「收藏」会对应我喜欢的音乐。默认随机播放，不会每次都从第一首开始；用户明确要求按顺序播放时把 shuffle 设为 false。",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"name": map[string]any{"type": "string", "description": "歌单名，例如：machine learning / 我喜欢的音乐"},
+					"name":    map[string]any{"type": "string", "description": "歌单名，例如：machine learning / 我喜欢的音乐"},
+					"shuffle": map[string]any{"type": "boolean", "description": "是否随机播放，默认 true；用户说按顺序播放时传 false"},
 				},
 				"required": []string{"name"},
 			},
 		},
 		{
 			Name:        "play_daily",
-			Description: "播放网易云「每日推荐」（猜你喜欢）。用户说随便放点什么、放今天推荐的、猜我喜欢时用。",
+			Description: "播放网易云「每日推荐」（猜你喜欢），会自动从推荐里随机挑一首起播。用户说随便放点什么、放点推荐的、猜我喜欢、随机放点时用。",
 			InputSchema: map[string]any{
 				"type":       "object",
 				"properties": map[string]any{},
@@ -353,7 +355,8 @@ func (a *adminServer) runMCPTool(ctx context.Context, call mcpToolCall) (string,
 		if q == "" {
 			return "", fmt.Errorf("query 和 index 至少要有一个")
 		}
-		return a.searchAndPlay(ctx, q)
+		shuffle, _ := call.Arguments["shuffle"].(bool)
+		return a.searchAndPlay(ctx, q, shuffle || wantsShuffle(q))
 
 	case "search_music":
 		q, _ := call.Arguments["query"].(string)
@@ -380,7 +383,11 @@ func (a *adminServer) runMCPTool(ctx context.Context, call mcpToolCall) (string,
 		if name == "" {
 			return "", fmt.Errorf("name 不能为空")
 		}
-		return a.playNamedPlaylist(ctx, name)
+		shuffle := true
+		if v, ok := call.Arguments["shuffle"].(bool); ok {
+			shuffle = v
+		}
+		return a.playNamedPlaylist(ctx, name, shuffle)
 
 	case "play_daily":
 		return a.playDaily(ctx)

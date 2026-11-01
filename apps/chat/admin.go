@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	openai "github.com/sashabaranov/go-openai"
 )
@@ -131,6 +133,22 @@ func newAdminServer(app *appRuntime) *adminServer {
 
 	// 恢复上次的播放队列：服务重启后"下一首"才不至于报"没有正在播放的歌单"
 	a.loadMusic(filepath.Join(filepath.Dir(a.configPath), "music-queue.json"))
+
+	// 一首自然播完 → 自动接当前队列的下一首；队列到头才退出音乐态。
+	// 没有这个回调，设备播完一首就停，用户还得再喊一次"下一首"。
+	if app.speaker != nil {
+		app.speaker.SetMusicEndedHandler(func() bool {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			msg, err := a.nextMusic(ctx)
+			if err != nil {
+				log.Printf("🎵 队列没有下一首了: %v", err)
+				return false
+			}
+			log.Printf("🎵 自动续播: %s", msg)
+			return true
+		})
+	}
 
 	// 音乐态歌词过滤（L3）：按歌曲 id 缓存歌词，判断一句话是不是正在播的歌词
 	a.lyrics = newLyricStore(func(ctx context.Context, id int64) (string, error) {

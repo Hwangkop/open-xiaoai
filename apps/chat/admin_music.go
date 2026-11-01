@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand/v2"
 	"os"
 	"strings"
 	"sync"
@@ -25,7 +26,8 @@ type musicState struct {
 	idx        int            // 当前播到第几首（0-based）
 	queueName  string
 	current    *netease.Song
-	currentURL string // 当前这首歌的播放直链（调试/AEC 参考信号用）
+	currentURL string  // 当前这首歌的播放直链（调试/AEC 参考信号用）
+	recent     []int64 // 最近播放过的歌（最新在前），随机起播时避开
 
 	// path 队列快照文件。服务重启后内存队列会丢，导致"下一首"报"没有正在播放的歌单"，
 	// 所以把队列落盘，启动时读回来。
@@ -38,6 +40,7 @@ type musicSnapshot struct {
 	QueueName  string         `json:"queue_name"`
 	Current    *netease.Song  `json:"current"`
 	CurrentURL string         `json:"current_url"`
+	Recent     []int64        `json:"recent"`
 	SavedAt    int64          `json:"saved_at"`
 }
 
@@ -50,6 +53,7 @@ func (a *adminServer) persistMusic() {
 		QueueName:  a.music.queueName,
 		Current:    a.music.current,
 		CurrentURL: a.music.currentURL,
+		Recent:     a.music.recent,
 		SavedAt:    time.Now().Unix(),
 	}
 	path := a.music.path
@@ -85,11 +89,89 @@ func (a *adminServer) loadMusic(path string) {
 	a.music.queueName = snap.QueueName
 	a.music.current = snap.Current
 	a.music.currentURL = snap.CurrentURL
+	a.music.recent = snap.Recent
 	a.music.mu.Unlock()
 	log.Printf("🎵 已恢复播放队列: 《%s》第 %d/%d 首", snap.QueueName, snap.Index+1, len(snap.Queue))
 }
 
 func newMusicState() *musicState { return &musicState{} }
+
+// recentMusicLimit 记住最近播放的歌曲数。列表本身不长时（每日推荐 20~32 首），
+// 随机起播很容易连着撞上刚放过的歌，靠这份记忆把重复压下去。
+const recentMusicLimit = 50
+
+// noteRecentLocked 把一首歌记到最近播放列表最前面（去重、截断）。
+func (m *musicState) noteRecentLocked(id int64) {
+	if id == 0 {
+		return
+	}
+	ids := make([]int64, 0, len(m.recent)+1)
+	ids = append(ids, id)
+	for _, v := range m.recent {
+		if v != id {
+			ids = append(ids, v)
+		}
+	}
+	if len(ids) > recentMusicLimit {
+		ids = ids[:recentMusicLimit]
+	}
+	m.recent = ids
+}
+
+// recentSetLocked 返回最近播放歌曲的集合（调用方需持有锁）。
+func (m *musicState) recentSetLocked() map[int64]bool {
+	set := make(map[int64]bool, len(m.recent))
+	for _, id := range m.recent {
+		set[id] = true
+	}
+	return set
+}
+
+// shuffleSongs 返回打乱后的副本，并保证第一首尽量不是最近刚放过的歌。
+// 随机起播的意义就在于“每次不一样”；如果随机出来还是刚放的那首，听感上和没随机一样。
+func shuffleSongs(songs []netease.Song, recent map[int64]bool) []netease.Song {
+	out := append([]netease.Song(nil), songs...)
+	rand.Shuffle(len(out), func(i, j int) {
+		out[i], out[j] = out[j], out[i]
+	})
+	if len(out) > 1 && recent[out[0].ID] {
+		for i := 1; i < len(out); i++ {
+			if !recent[out[i].ID] {
+				out[0], out[i] = out[i], out[0]
+				break
+			}
+		}
+	}
+	return out
+}
+
+// shuffleWords 用户表达“随机”时常见的说法。
+var shuffleWords = []string{"随机", "随便", "打乱", "shuffle"}
+
+// wantsShuffle 判断一句话里有没有“随机/打乱”的意思（分类器兜底路径也用它）。
+func wantsShuffle(text string) bool {
+	t := strings.ToLower(text)
+	for _, w := range shuffleWords {
+		if strings.Contains(t, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// stripShuffleWords 去掉“随机播放”这类修饰，剩下真正的点歌关键词。
+func stripShuffleWords(text string) string {
+	t := strings.ToLower(text)
+	for _, w := range []string{
+		"随机播放", "随机放点", "随机放", "随机来点", "随机来", "随机",
+		"打乱播放", "打乱", "shuffle",
+		"随便播放", "随便放点", "随便放", "随便来点", "随便来", "随便",
+		"播放", "放点", "来点",
+	} {
+		t = strings.ReplaceAll(t, w, "")
+	}
+	return strings.TrimSpace(t)
+}
 
 func (a *adminServer) searchMusic(ctx context.Context, keyword string, limit int) ([]netease.Song, error) {
 	client := a.neteaseClient()
@@ -120,10 +202,15 @@ func (a *adminServer) playSong(ctx context.Context, s netease.Song) (string, err
 	if err := a.playURL(url); err != nil {
 		return "", err
 	}
+	// 真正起播成功后再记录状态：起播失败要让 playFromList 能接着试下一首
+	if err := a.speaker.PlayPendingMusic(); err != nil {
+		return "", fmt.Errorf("《%s》起播失败: %w", s.Name, err)
+	}
 	a.music.mu.Lock()
 	cur := s
 	a.music.current = &cur
 	a.music.currentURL = url
+	a.music.noteRecentLocked(s.ID)
 	a.music.mu.Unlock()
 	a.persistMusic()
 	log.Printf("🎵 播放: %s - %s", s.Name, s.Artists)
@@ -132,7 +219,6 @@ func (a *adminServer) playSong(ctx context.Context, s netease.Song) (string, err
 	// 那个设计在人一直说话的环境里几乎必然失败——一旦被打断，deferred 的
 	// PlayPendingMusic 会因为 ctx 取消而 ClearPendingMusic，歌就永远出不来了。
 	// 现在就放：确认语会短暂抢占，播完由 Speaker 自动接回。
-	a.speaker.PlayPendingMusic()
 	return fmt.Sprintf("正在播放《%s》- %s", s.Name, s.Artists), nil
 }
 
@@ -160,21 +246,42 @@ func (a *adminServer) playFromList(ctx context.Context, songs []netease.Song, st
 	return netease.Song{}, fmt.Errorf("列表是空的")
 }
 
-// searchAndPlay 直接点歌（保持原来的行为）。
-func (a *adminServer) searchAndPlay(ctx context.Context, query string) (string, error) {
-	songs, err := a.searchMusic(ctx, query, 15)
+// searchAndPlay 搜索并播放。shuffle=true 时从结果里随机起播
+// （“随机放点周杰伦”这类），否则按搜索相关度放第一首。
+func (a *adminServer) searchAndPlay(ctx context.Context, query string, shuffle bool) (string, error) {
+	if shuffle {
+		if q := stripShuffleWords(query); q != "" {
+			query = q
+		} else {
+			// “随机播放”没给关键词：当作随便放点，走每日推荐
+			return a.playDaily(ctx)
+		}
+	}
+	limit := 15
+	if shuffle {
+		limit = 30 // 随机挑歌时多取一些，选择面更大
+	}
+	songs, err := a.searchMusic(ctx, query, limit)
 	if err != nil {
 		return "", err
 	}
 	// 用这次搜索的结果当队列：点一首歌之后说"下一首"能接着听同主题的，
 	// 而不是报"没有正在播放的歌单"（旧队列也不会被沿用）。
 	a.music.mu.Lock()
+	if shuffle {
+		songs = shuffleSongs(songs, a.music.recentSetLocked())
+		log.Printf("🎲 随机点歌 %q：候选 %d 首", query, len(songs))
+	}
 	a.music.queue = songs
 	a.music.queueName = "搜索：" + query
+	a.music.idx = 0
 	a.music.mu.Unlock()
 	s, err := a.playFromList(ctx, songs, 0)
 	if err != nil {
 		return "", err
+	}
+	if shuffle {
+		return fmt.Sprintf("正在播放《%s》- %s（随机）", s.Name, s.Artists), nil
 	}
 	return fmt.Sprintf("正在播放《%s》- %s", s.Name, s.Artists), nil
 }
@@ -194,11 +301,19 @@ func (a *adminServer) playSearchIndex(ctx context.Context, index int) (string, e
 	if err != nil {
 		return "", err
 	}
+	// 让"下一首/自动续播"接着放这次搜索的候选，而不是更早的旧队列
+	a.music.mu.Lock()
+	a.music.queue = songs
+	a.music.queueName = "搜索候选"
+	a.music.idx = index - 1
+	a.music.mu.Unlock()
+	a.persistMusic()
 	return msg, nil
 }
 
-// playNamedPlaylist 按名字找歌单（含“我喜欢”），播放第一首能播的。
-func (a *adminServer) playNamedPlaylist(ctx context.Context, name string) (string, error) {
+// playNamedPlaylist 按名字找歌单（含“我喜欢”）。
+// 默认随机播放：每次都从第一首开始既不智能，也容易让人以为指令没生效。
+func (a *adminServer) playNamedPlaylist(ctx context.Context, name string, shuffle bool) (string, error) {
 	client := a.neteaseClient()
 	acc, err := client.GetAccount(ctx)
 	if err != nil || acc == nil || !acc.LoggedIn {
@@ -220,6 +335,10 @@ func (a *adminServer) playNamedPlaylist(ctx context.Context, name string) (strin
 		return "", fmt.Errorf("歌单「%s」是空的", pl.Name)
 	}
 	a.music.mu.Lock()
+	if shuffle {
+		songs = shuffleSongs(songs, a.music.recentSetLocked())
+		log.Printf("🎲 随机播放歌单《%s》：%d 首", pl.Name, len(songs))
+	}
 	a.music.queue = songs
 	a.music.queueName = pl.Name
 	a.music.idx = 0
@@ -228,10 +347,14 @@ func (a *adminServer) playNamedPlaylist(ctx context.Context, name string) (strin
 	if err != nil {
 		return "", err
 	}
+	if shuffle {
+		return fmt.Sprintf("正在播放歌单《%s》，随机先放《%s》- %s", pl.Name, s.Name, s.Artists), nil
+	}
 	return fmt.Sprintf("开始播放歌单《%s》，第一首《%s》- %s", pl.Name, s.Name, s.Artists), nil
 }
 
-// playDaily 播放网易云「每日推荐」。
+// playDaily 播放网易云「每日推荐」。推荐本来就是拿来随便听的，
+// 每次固定从第一首开始等于把“推荐”变成了“单曲循环第一首”。
 func (a *adminServer) playDaily(ctx context.Context) (string, error) {
 	client := a.neteaseClient()
 	songs, err := client.DailySongs(ctx)
@@ -242,6 +365,8 @@ func (a *adminServer) playDaily(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("今天的每日推荐是空的")
 	}
 	a.music.mu.Lock()
+	songs = shuffleSongs(songs, a.music.recentSetLocked())
+	log.Printf("🎲 每日推荐随机起播：%d 首", len(songs))
 	a.music.queue = songs
 	a.music.queueName = "每日推荐"
 	a.music.idx = 0
@@ -250,7 +375,7 @@ func (a *adminServer) playDaily(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("今天的每日推荐共 %d 首，先放《%s》- %s", len(songs), s.Name, s.Artists), nil
+	return fmt.Sprintf("今天的每日推荐共 %d 首，正在播放《%s》- %s", len(songs), s.Name, s.Artists), nil
 }
 
 // nextMusic 播放队列的下一首。

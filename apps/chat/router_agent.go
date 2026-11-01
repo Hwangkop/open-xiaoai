@@ -34,13 +34,14 @@ const (
 type musicDecision struct {
 	Intent     string  `json:"intent"`
 	Query      string  `json:"query"`
+	Shuffle    bool    `json:"shuffle"`
 	Confidence float64 `json:"confidence"`
 }
 
 const musicRouterSystemPrompt = `你是智能音箱的意图路由器。用户在放音乐时对音箱说了一句话，你只判断他想干什么。不要聊天、不要解释、不要输出 JSON 以外的任何内容。
 
 输出格式（只输出一个 JSON 对象）：
-{"intent": "...", "query": "...", "confidence": 0.0}
+{"intent": "...", "query": "...", "shuffle": false, "confidence": 0.0}
 
 intent 只能取这些值：
 - "next"        切歌、不想听这首、换一首
@@ -57,7 +58,8 @@ intent 只能取这些值：
 1. 拿不准就判 "ignore"，confidence 给 0.3 以下。
 2. 歌词经常写成命令句（"留下来""别走""告诉我"），不要因为像命令就判操作；只有明确指向音箱功能才算操作。
 3. 既有情绪又有操作（"太吵了换一首"）按操作判。
-4. query 只填用户明确说出来的内容，没有就留空字符串。`
+4. query 只填用户明确说出来的内容，没有就留空字符串。
+5. 用户说"随机""随便放""打乱"时，如果 intent=play，shuffle 设为 true，表示要从搜索结果里随机挑一首，而不是放第一首。`
 
 // routeMusicText 把音乐态下没被前面几道闸拦住的话交给路由器。
 // fromWake=true 表示这句话带唤醒词（"豆包豆包，换一首"），本地词面闸不再适用。
@@ -244,7 +246,7 @@ func (e *Engine) applyMusicDecision(ctx context.Context, text string, d musicDec
 			record("no_tool")
 			return
 		}
-		if msg, err := e.musicPlayQuery(ctx, d.Query); err == nil {
+		if msg, err := e.musicPlayQuery(ctx, d.Query, d.Shuffle || wantsShuffle(text)); err == nil {
 			log.Printf("🎵 %s", msg)
 			record("executed")
 			// 点歌要有一句口头确认：放错了（比如"如愿"被听成"无愿"）能立刻听出来。
