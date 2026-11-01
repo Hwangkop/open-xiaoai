@@ -52,7 +52,18 @@ type DoubaoTTS struct {
 	sampleRate int
 	speechRate float64
 	pitch      float64
+	emotion    string
 	dir        string
+}
+
+// WithVoice 复制一份配置、换音色/情绪，用于管理台试听（不改全局配置）。
+func (t *DoubaoTTS) WithVoice(speaker, emotion string) *DoubaoTTS {
+	cp := *t
+	if v := strings.TrimSpace(speaker); v != "" {
+		cp.speaker = v
+	}
+	cp.emotion = strings.TrimSpace(emotion)
+	return &cp
 }
 
 func NewDoubaoTTS(cfg TTSConfig) *DoubaoTTS {
@@ -155,6 +166,10 @@ func (t *DoubaoTTS) sessionPayload() string {
 			"format":      t.format,
 			"sample_rate": t.sampleRate,
 		},
+	}
+	// 情绪（部分音色支持）；服务端不认识时会忽略
+	if t.emotion != "" {
+		ttsCfg["emotion"] = t.emotion
 	}
 	if t.speechRate != defaultDoubaoSpeed || t.pitch != 0 {
 		ttsCfg["extra"] = map[string]any{

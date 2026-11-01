@@ -358,3 +358,30 @@ func (a *adminServer) handleDebugLyric(w http.ResponseWriter, r *http.Request) {
 		"result":      hit,
 	})
 }
+
+// ttsVoices 候选音色（大模型语音合成 2.0 的常见音色），管理台用来 A/B 试听。
+var ttsVoices = []map[string]string{
+	{"id": "zh_female_taozi_conversation_v4_wvae_bigtts", "label": "桃子·对话版（当前默认）"},
+	{"id": "zh_female_vv_jupiter_bigtts", "label": "vv·木星（活泼）"},
+	{"id": "zh_female_vv_mars_bigtts", "label": "vv·火星"},
+	{"id": "zh_female_wanwanxiaohe_moon_bigtts", "label": "湾湾小何（温柔）"},
+	{"id": "zh_female_roumeinvyou_moon_bigtts", "label": "柔美女友"},
+	{"id": "zh_female_cancan_mars_bigtts", "label": "灿灿"},
+	{"id": "zh_female_baby_moon_bigtts", "label": "娃娃音"},
+	{"id": "zh_male_yangguangqingnian_moon_bigtts", "label": "阳光青年（男）"},
+}
+
+// handleTTSVoices 返回候选音色与情绪选项（只读）。
+func (a *adminServer) handleTTSVoices(w http.ResponseWriter, r *http.Request) {
+	writeAdminJSON(w, http.StatusOK, map[string]any{
+		"voices": ttsVoices,
+		"emotions": []map[string]string{
+			{"id": "", "label": "默认"},
+			{"id": "happy", "label": "开心"},
+			{"id": "sad", "label": "悲伤"},
+			{"id": "angry", "label": "生气"},
+			{"id": "surprised", "label": "惊讶"},
+			{"id": "neutral", "label": "中性"},
+		},
+	})
+}

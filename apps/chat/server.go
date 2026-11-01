@@ -139,6 +139,7 @@ func startServer(ctx context.Context, app *appRuntime) error {
 	admin := app.Admin()
 	mux.HandleFunc("/admin/api/config", withAppAuth(app, admin.handleConfig))
 	mux.HandleFunc("/admin/api/tts", withAppAuth(app, admin.handleTTS))
+	mux.HandleFunc("/admin/api/tts/voices", withAppAuth(app, admin.handleTTSVoices))
 	mux.HandleFunc("/admin/api/chat", withAppAuth(app, admin.handleChatTest))
 	mux.HandleFunc("/admin/api/tasks", withAppAuth(app, admin.handleTasks))
 	mux.HandleFunc("/admin/api/debug/shell", admin.handleDebugShell)

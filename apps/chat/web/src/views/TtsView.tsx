@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, Send, Volume2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -29,7 +29,24 @@ export function TtsView({ onNotify, onError }: Props) {
   const [mode, setMode] = useState<Mode>('tts')
   const [sending, setSending] = useState(false)
   const [history, setHistory] = useState<SentItem[]>([])
+  const [voice, setVoice] = useState('')      // 空 = 用配置里的默认音色
+  const [emotion, setEmotion] = useState('')  // 空 = 默认情绪
+  const [voices, setVoices] = useState<{ id: string; label: string }[]>([])
+  const [emotions, setEmotions] = useState<{ id: string; label: string }[]>([])
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+
+  useEffect(() => {
+    api<{ voices: { id: string; label: string }[]; emotions: { id: string; label: string }[] }>(
+      '/admin/api/tts/voices',
+    )
+      .then((r) => {
+        setVoices(r.voices || [])
+        setEmotions(r.emotions || [])
+      })
+      .catch(() => {
+        /* 未启用豆包 TTS 时忽略 */
+      })
+  }, [])
 
   const send = useCallback(async () => {
     const value = text.trim()
@@ -42,7 +59,9 @@ export function TtsView({ onNotify, onError }: Props) {
     try {
       await api(mode === 'tts' ? '/admin/api/tts' : '/admin/api/chat', {
         method: 'POST',
-        body: JSON.stringify({ text: value }),
+        body: JSON.stringify(
+          mode === 'tts' ? { text: value, speaker: voice, emotion } : { text: value },
+        ),
       })
       setHistory((prev) => [{ id: ++seq, text: value, at, ok: true, mode }, ...prev].slice(0, 20))
       onNotify(mode === 'tts' ? '已发送到音箱播放' : '已交给 AI，稍等听音箱', 'success')
@@ -54,7 +73,7 @@ export function TtsView({ onNotify, onError }: Props) {
     } finally {
       setSending(false)
     }
-  }, [mode, onError, onNotify, text])
+  }, [emotion, mode, onError, onNotify, text, voice])
 
   return (
     <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
@@ -86,6 +105,35 @@ export function TtsView({ onNotify, onError }: Props) {
               </button>
             ))}
           </div>
+          {mode === 'tts' && voices.length > 0 && (
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                value={voice}
+                onChange={(e) => setVoice(e.target.value)}
+                className="h-9 appearance-none rounded-md border border-input-border bg-input px-2 text-ui-sm text-foreground"
+                title="试听某个音色（不修改配置）"
+              >
+                <option value="">音色：配置默认</option>
+                {voices.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={emotion}
+                onChange={(e) => setEmotion(e.target.value)}
+                className="h-9 appearance-none rounded-md border border-input-border bg-input px-2 text-ui-sm text-foreground"
+                title="部分音色支持情绪"
+              >
+                {emotions.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    情绪：{e.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <textarea
             ref={inputRef}
             value={text}

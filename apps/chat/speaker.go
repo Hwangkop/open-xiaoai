@@ -334,6 +334,29 @@ func (s *Speaker) doubaoTTSInstance() *DoubaoTTS {
 // CanPreSynthesize 报告是否支持"先合成后播放"（只有豆包 TTS 支持）。
 func (s *Speaker) CanPreSynthesize() bool { return s.doubaoTTSInstance() != nil }
 
+// PlayTTSWithVoice 用指定音色/情绪合成并播放（管理台试听用，不影响配置）。
+func (s *Speaker) PlayTTSWithVoice(text, speaker, emotion string) error {
+	tts := s.doubaoTTSInstance()
+	if tts == nil {
+		return errors.New("未启用豆包语音合成")
+	}
+	s.ttsMu.RLock()
+	baseURL := s.ttsBaseURL
+	s.ttsMu.RUnlock()
+	if baseURL == nil {
+		return errors.New("tts base url 未就绪")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+	name, err := tts.WithVoice(speaker, emotion).Synthesize(ctx, text)
+	if err != nil {
+		return err
+	}
+	base := strings.TrimRight(baseURL(), "/")
+	s.ReleaseNativeSuppression()
+	return s.PlayURL(base+"/tts/"+name, true)
+}
+
 // SynthesizeURL 只做语音合成，返回可播放的 URL，不播放。
 // 语音流水线用它提前把后面几句合成好。
 func (s *Speaker) SynthesizeURL(text string) (string, error) {
