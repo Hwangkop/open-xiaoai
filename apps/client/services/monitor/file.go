@@ -12,6 +12,10 @@ import (
 type FileMonitorEvent struct {
 	Type string // "NewFile" or "NewLine"
 	Line string // populated for NewLine events
+	// PreFrozen 表示客户端在发这条事件前已经本地冻结了原生助手。
+	// 服务端据此决定"接管"还是"立即释放"，避免多一次往返把 TTS 放出去。
+	PreFrozen          bool
+	InstructionGuarded bool
 }
 
 func (e FileMonitorEvent) MarshalJSON() ([]byte, error) {
@@ -19,7 +23,12 @@ func (e FileMonitorEvent) MarshalJSON() ([]byte, error) {
 	case "NewFile":
 		return json.Marshal(e.Type)
 	case "NewLine":
-		return json.Marshal(map[string]string{"NewLine": e.Line})
+		// pre_frozen 只在 true 时出现，保持与旧客户端/服务端的 JSON 形状兼容。
+		return json.Marshal(struct {
+			NewLine            string `json:"NewLine"`
+			PreFrozen          bool   `json:"pre_frozen,omitempty"`
+			InstructionGuarded bool   `json:"instruction_guarded,omitempty"`
+		}{e.Line, e.PreFrozen, e.InstructionGuarded})
 	default:
 		type fileMonitorEvent FileMonitorEvent
 		return json.Marshal(fileMonitorEvent(e))
@@ -79,6 +88,9 @@ func (fm *FileMonitor) run(ctx context.Context, filePath string, onUpdate func(F
 		}
 	}
 
+	wake, stopWake := newFileWake(filePath)
+	defer stopWake()
+
 	var f *os.File
 	openFile := func() (*os.File, error) {
 		file, err := os.Open(filePath)
@@ -119,6 +131,8 @@ func (fm *FileMonitor) run(ctx context.Context, filePath string, onUpdate func(F
 		select {
 		case <-ctx.Done():
 			return
+		case <-wake:
+			// inotify 事件：文件刚被写入，立刻读，别等下一个 100ms 轮询
 		case <-time.After(fileMonitorPollInterval):
 		}
 

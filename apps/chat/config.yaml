@@ -133,13 +133,20 @@ context:
 tts:
   provider: "doubao"
   speaker: "zh_female_taozi_conversation_v4_wvae_bigtts"
-  format: "mp3"          # mp3 / ogg_opus / pcm / wav
+  format: "wav"          # wav 走 aplay -D notify，能和音乐叠播；mp3 走 miplayer
   bit_rate: 32000
   sample_rate: 24000
   speech_rate: 1.0
   # 情绪：happy / sad / angry / surprised / neutral，留空用音色自带情绪
   emotion: ""       # 语速，1.0 正常，>1 更快
   pitch: 0.0             # 音调，0 正常
+  # 豆包 TTS 音量（0-100）：WAV 路径映射到 notifyvol，只影响 notify 通道，不动音乐。
+  # 注意 mysoftvol 是全局输出增益，会影响音乐，不能拿来调 TTS。
+  volume: 60
+  # 播放器：auto（wav→aplay / 其它→miplayer）/ aplay / miplayer
+  player: "auto"
+  # WAV 用 aplay 时的输出设备：notify（独立 TTS 音量）/ playback（旧实验通道）
+  wav_device: "notify"
 
 # 打断配置：仅当关键词或唤醒词匹配时才打断
 interrupt:
@@ -272,10 +279,11 @@ music_duck:
   volume: 35   # 压到的音量 0-100
 
 # 原生唤醒接管（音乐态）。音乐大声时只有原生 KWS 听得见「小爱同学」，
-# 打开后：原生 ASR 出 final → 冻结设备播放器（原生 TTS 和音乐一起停）
-# → 文本交给豆包、用我们自己的 TTS 播 → 播完解冻并继续放歌。
+# 打开后：原生 ASR final 交给豆包；freeze 模式暂停 aivs，instruction 模式按 dialog 拦截动作。
+# 豆包 WAV 走 notify，与音乐共存；完整效果仍需原生唤醒实测。
 # 代价是原生小爱在这轮不出声；家电类指令仍按 native_keywords 交还原生。
 native_wake:
+  isolation_mode: freeze   # freeze=兼容冻结；instruction=实验性指令隔离，需音箱加载 native_guard.so
   takeover_enabled: false  # 默认关；实机验收通过后再打开
   max_seconds: 25          # 单轮接管上限，超时强制解冻，避免音乐永久停住
 

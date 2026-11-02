@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,10 +39,15 @@ const (
 		"&web_platform=browser&web_tab_id=open-xiaoai-chat"
 
 	defaultDoubaoSpeaker    = "zh_female_taozi_conversation_v4_wvae_bigtts"
-	defaultDoubaoFormat     = "mp3"
+	defaultDoubaoFormat     = "wav"
 	defaultDoubaoBitRate    = 32000
 	defaultDoubaoSampleRate = 24000
 	defaultDoubaoSpeed      = 1.0
+
+	// TTS 播放默认值：WAV 走 notify 通道，音量 60%（notifyvol ≈153）。
+	defaultTTSVolume    = 60
+	defaultTTSPlayer    = "auto"
+	defaultTTSWavDevice = "notify"
 )
 
 // DoubaoTTS 把文本合成为音频文件并缓存在本地，供音箱通过 HTTP 拉取播放。
@@ -100,12 +106,31 @@ func NewDoubaoTTS(cfg TTSConfig) *DoubaoTTS {
 	}
 }
 
+// ttsCacheDir 由 main 设成配置目录下的持久化目录；为空时退回系统临时目录。
+var ttsCacheDir string
+
+// SetTTSCacheDir 设置 TTS 缓存目录（应与 /tts/ 路由共用同一个目录）。
+func SetTTSCacheDir(dir string) { ttsCacheDir = strings.TrimSpace(dir) }
+
 // defaultTTSDir 是合成音频的缓存目录，HTTP 路由 /tts/ 也从这里读文件。
 func defaultTTSDir() string {
+	if ttsCacheDir != "" {
+		return ttsCacheDir
+	}
 	return filepath.Join(os.TempDir(), "open-xiaoai-tts")
 }
 
 func (t *DoubaoTTS) Dir() string { return t.dir }
+
+// Cached 报告这段文本在当前配置下是否已有缓存。
+func (t *DoubaoTTS) Cached(text string) bool {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(t.dir, t.cacheName(text)))
+	return err == nil && info.Size() > 0
+}
 
 // Synthesize 返回可直接给音箱播放的本地文件名（位于 Dir 内）。
 func (t *DoubaoTTS) Synthesize(ctx context.Context, text string) (string, error) {
@@ -120,6 +145,7 @@ func (t *DoubaoTTS) Synthesize(ctx context.Context, text string) (string, error)
 	name := t.cacheName(text)
 	path := filepath.Join(t.dir, name)
 	if info, err := os.Stat(path); err == nil && info.Size() > 0 {
+		log.Printf("📦 TTS 缓存命中: %s", name)
 		return name, nil
 	}
 

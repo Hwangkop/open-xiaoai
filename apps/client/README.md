@@ -9,6 +9,12 @@
 - **事件上报**：语音识别结果、播放状态、唤醒词等事件 → Server
 - **RPC 响应**：执行脚本、播放音频、系统控制等指令
 
+## 原生指令隔离与开机加载
+
+OH2P 1.62.2 可显式启用按 dialog 过滤的实验方式，保留原生 ASR，阻止本轮小爱 TTS/播放等动作。client 仅在匹配钩子就绪、服务连接有效时维持短租约，并核验逐轮认领；缺少钩子时回退冻结兼容路径。
+
+需同时部署新版 `init.sh`、匹配固件的库和加载管理器。`native-guard.sh enable` 后，开机在 AEC 准备完成、client 连接前重建临时挂载；校验或稳定性检查失败不阻止 client 启动。安装会一次性重启 aivs，应在空闲时进行。固件范围、清单生成与持久 disable 回滚见 [tools/native-guard/README.md](../../tools/native-guard/README.md)。此方式与接管 `speech.usock` 的宿主实验互斥，音乐共存方案使用原生 ASR。
+
 ## 快速开始
 
 > [!NOTE]

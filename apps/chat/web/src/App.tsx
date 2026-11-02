@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  AudioLines,
   CalendarClock,
   MessagesSquare,
   Mic,
@@ -27,11 +28,12 @@ import { TtsView } from '@/views/TtsView'
 import { WakeView } from '@/views/WakeView'
 import { AppManageView } from '@/views/AppManageView'
 import { AgentsView } from '@/views/AgentsView'
+import { AudioTestView } from '@/views/AudioTestView'
 import { api, getBase } from '@/lib/api'
 import { useToasts, type ToastItem } from '@/lib/useToasts'
 import { cn } from '@/lib/utils'
 
-type ViewId = 'doubao' | 'apps' | 'schedule' | 'wake' | 'config' | 'tts' | 'agents'
+type ViewId = 'doubao' | 'apps' | 'schedule' | 'wake' | 'config' | 'tts' | 'audiotest' | 'agents'
 
 const NAV: { id: ViewId; label: string; icon: typeof MessagesSquare; hint: string }[] = [
   { id: 'apps', label: '应用管理', icon: Boxes, hint: '豆包 / 网易云 账号登录' },
@@ -40,6 +42,7 @@ const NAV: { id: ViewId; label: string; icon: typeof MessagesSquare; hint: strin
   { id: 'agents', label: '智能体', icon: Bot, hint: '三条会话的上下文管理' },
   { id: 'config', label: '配置', icon: SlidersHorizontal, hint: '在线编辑 chat 配置' },
   { id: 'tts', label: '语音测试', icon: Volume2, hint: '把文字发到音箱试听' },
+  { id: 'audiotest', label: '音频通道测试', icon: AudioLines, hint: '音乐开关 + 各播放通道试播' },
 ]
 
 const VIEW_IDS = NAV.map((n) => n.id)
@@ -183,6 +186,7 @@ export default function App() {
             {view === 'apps' && <AppManageView onNotify={notify} onError={notifyError} />}
             {view === 'wake' && <WakeView onNotify={notify} onError={notifyError} />}
             {view === 'tts' && <TtsView onNotify={notify} onError={notifyError} />}
+            {view === 'audiotest' && <AudioTestView onNotify={notify} onError={notifyError} />}
             {view === 'agents' && <AgentsView onNotify={notify} onError={notifyError} />}
           </div>
         </div>

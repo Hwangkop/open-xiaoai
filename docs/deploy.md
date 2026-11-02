@@ -476,3 +476,14 @@ YAML 缩进必须是 `homeassistant:` 下两空格；粘贴丢缩进会变成顶
 - `tools/flash/README.md`：macOS 刷机工具说明
 - `tools/client-patch/README.md`：固件制作
 - `apps/chat/README.md`：服务端配置项
+
+
+## 原生指令隔离实验的开机加载
+
+当前仅支持已验证的 OH2P 1.62.2；构建清单、安装、租约与回滚见 [tools/native-guard/README.md](../tools/native-guard/README.md)。默认 `native_wake.isolation_mode: freeze`；instruction 需匹配固件钩子及客户端逐轮核验。不要全局设置 LD_PRELOAD，也不要每轮重启 aivs。
+
+将管理器、库、过滤器和生成的 SHA256 清单部署到 `/data/open-xiaoai/`，同时更新本仓库 `apps/client/init.sh`。空闲时运行 `native-guard.sh enable`。后续 `/data/init.sh → boot.sh → init.sh` 在 AEC 准备后、client 连接前运行 `native-guard.sh boot`，每次开机校验固件与载荷后重建临时覆盖；健康状态重复调用不重启音频进程。
+
+校验/启动失败会关闭持久开关、写 `native-guard.failed`、撤销租约并尝试恢复原生服务，client 继续兼容启动。查看 `native-guard.sh status`、`/tmp/xiaoai-native-guard/boot.log` 与客户端实际 effective 日志。固件升级后指纹不匹配时必须重新验证，不能自动更新清单跳过检查。
+
+回滚先把服务端隔离方式改回 freeze 并同步，随后空闲时执行 `/data/open-xiaoai/native-guard.sh disable`（新版回滚脚本同样委托此命令）。它移除持久开关和本方案覆盖，恢复原生 aivs；开关关闭后重启不会重新加载。首次安装/恢复会重启 aivs，不能宣称对当前音频无影响。

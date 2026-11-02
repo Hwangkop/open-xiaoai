@@ -19,38 +19,48 @@ Open-XiaoAI 通过运行在音箱上的 client 补丁程序，把小爱音箱的
 - 下载网络歌曲：明确说“下载歌曲名”后，通过 LX Sync Server 的代理下载到本地目录，下载成功后再播放本地文件。
 - 自己扩展能力：Server 端收到音箱事件后可以接任意 AI、Agent、脚本或家庭自动化逻辑。
 
-## 接管「小爱同学」：不是重写一个小爱，而是复用它最稳的部分
+## 接管「小爱同学」并保留背景音乐
 
-小爱音箱真正难替换的是**唤醒和听清**：本地 KWS、四麦阵列、回声消除（AEC）、云端 ASR，这一套在音乐大声时依然能听见你。我们不再重做这些，只把它们当成前端：
+保留音箱原生唤醒、麦克风阵列、AEC 和云端 ASR，把识别文本交给自己的 LLM。当前在 **OH2P 1.62.2** 上验证的实验方案是：按 dialog 过滤小爱的回答动作，豆包 WAV 使用独立的 notify 通道，背景音乐继续播放。
 
 ```text
-用户：「小爱同学，今天天气怎么样」
-  │
-  ├─ 唤醒 / 收音 / AEC / 云端 ASR   ← 全部沿用音箱原生（音乐大声也能听见）
-  │
-  ├─ 原生准备开口回答时            ← 冻结设备播放器，原生 TTS 与音乐一起停住
-  │
-  ├─ 识别文本交给你的 LLM（豆包 / codex / 任意 OpenAI 兼容接口）
-  │
-  └─ 回答用我们自己的 TTS 播出来    ← 与原生播放器相互独立，不受冻结影响
-       └─ 播完解冻、音乐继续；还可以直接接着说（自动重开原生收音，最多 6 轮）
+「小爱同学，今天天气怎么样」
+  → 原生唤醒 / AEC / 云端 ASR
+  → client 在线租约 + SDK 钩子认领本轮 dialog
+  → 保留识别与结束事件，拦截本轮原生 TTS / 播放 / 音量动作
+  → 识别文本交给豆包 / codex / OpenAI 兼容接口
+  → 豆包 WAV → aplay -D notify → notifyvol
+
+背景音乐：mediaplayer common → 音乐音量
+播放器唤醒焦点：有效租约期间过滤 player_wakeup start/stop/multistart
 ```
 
-几个关键点：
+服务端配置示例（**先安装匹配固件的设备钩子**）：
 
-- **唤醒词不变**，还是「小爱同学」，不用重新训练模型。
-- **家电类指令仍然交还小爱**：冻结只能挡住声音，挡不住它执行动作，两边都执行会重复。
-- **和本地唤醒是二选一**：句子里含「小爱同学」就判给原生链路；只说「小爱」或「豆包豆豆」才走本地链路。这样不会两边同时抢一句话。
-- **配置开关**：`native_wake.takeover_enabled`（默认关）+ `native_wake.max_seconds`（单轮上限，默认 25 秒，超时强制解冻，音乐不会永久停住）。管理台「配置 → 音乐」里可以直接改。
+```yaml
+native_wake:
+  takeover_enabled: true
+  isolation_mode: instruction  # 默认 freeze；instruction 需设备钩子及逐轮核验
+  max_seconds: 25
 
-已知限制：
+tts:
+  provider: doubao
+  format: wav
+  player: auto
+  wav_device: notify
+  volume: 60                  # 0-100，映射到 notifyvol
+```
 
-- 唤醒应答「我在」由固件直接写 ALSA 播放，不经过播放器，所以**还会响**；要静音需要另做一层音频缓冲拦截。
-- 协议层「只识别不回答」（`Execution.RequestControl` 的 `disabled=["NLP","TTS"]`）在 1.62.2 上是 protobuf 语音协议，没有可注入的 JSON 出口；所以我们用「冻结播放器」这个等价手段，代价是要自己负责解冻和恢复。
+- **音量独立**：`notifyvol` 调整 notify 通道，音乐使用 mediaplayer 音量；`mysoftvol` 会影响音乐，保持固定。其他使用 notify PCM 的提示音也可能随 notifyvol 改变。
+- **避免重复恢复**：播放器已是播放状态时直接继续，不重复发 play、重拉 URL 或 seek；音乐态回答结束后不自动重开原生收音。
+- **开机自动加载**：`/data/init.sh → boot.sh → init.sh` 在 client 连接前校验固件和载荷、重建临时挂载。显式 enable 后重启自动恢复；加载失败关闭持久开关并继续兼容启动。安装、状态检查和 disable 回滚见 [原生指令隔离说明](tools/native-guard/README.md)。
+- **原生分流**：命中 `native_keywords` 的文本不被钩子认领；自定义家电工具统一走 Home Assistant，避免原生与自定义动作重复执行。
 
-致谢 [open-speaker-llm/xiaomi_ai_llm](https://github.com/open-speaker-llm/xiaomi_ai_llm)：native-first 的思路、AEC 参考通道必须在采集启动前打开、以及复用原生 ASR 的做法都来自这个项目。我们做的是固件差异适配（1.62.2 走 protobuf 而非 JSON）和「冻结播放器」这条替代路径。
+**验收进展（2026-11-03）**：实际重启后挂载、钩子、client 重连和在线租约恢复，服务端确认 `effective=instruction`；用户复测确认“音乐持续，只有豆包回答”，覆盖思考、豆包播报和回答结束。本轮通过，连续 5 轮、打断、断线与开关关闭等稳定性验收仍有待完成。
 
-细节与实测数据见 [音频链路与原生 ASR 逆向](docs/device-audio-aec-native-asr.md)。
+使用边界：目前只适配上述固件及其 SDK 指纹；默认接管关闭、隔离方式为 freeze。钩子缺失或本轮未认领时使用冻结 aivs 的兼容路径，该路径不保证零漏音或音乐全程共存。本方案过滤本地下行动作，ASR/NLP 请求仍会上云，不能保证小米云不生成 TTS；固件唤醒提示音也不在本轮回答过滤范围内。
+
+参考 [open-speaker-llm/xiaomi_ai_llm](https://github.com/open-speaker-llm/xiaomi_ai_llm) 的原生 ASR 与 SDK 钩子思路，已保留 MIT 许可；当前固件的适配代码和独立测试位于 [tools/native-guard](tools/native-guard/README.md)。逆向过程与失败方案见 [音频链路与原生 ASR](docs/device-audio-aec-native-asr.md)，部署与回滚见 [部署指南](docs/deploy.md)。
 
 ## 项目结构
 
@@ -78,7 +88,7 @@ Open-XiaoAI 通过运行在音箱上的 client 补丁程序，把小爱音箱的
 
 ## 选哪种玩法
 
-`apps/chat` 是唯一的 AI Server：对话后端可在 **codex（可调 MCP 工具）**、**豆包网页直连**、**OpenAI 兼容 API**（GPT / Claude / DeepSeek / 通义千问）之间切换；内置 21 个 MCP 工具（音乐 / 播报 / 定时任务 / 家电 / 搜索）、管理台和音乐态语音控制。
+`apps/chat` 是唯一的 AI Server：对话后端可在 **codex（可调 MCP 工具）**、**豆包网页直连**、**OpenAI 兼容 API**（GPT / Claude / DeepSeek / 通义千问）之间切换；内置 22 个 MCP 工具（音乐 / 播报 / 定时任务 / 家电 / 搜索）、管理台和音乐态语音控制。
 
 如果你主要想让小爱音箱变成本地音乐播放器，使用 `apps/chat + pkg/music`。`pkg/music` 会先搜索本地曲库；只要本地有命中，就播放本地文件，不会触发远程搜索。只有本地完全找不到普通歌曲时，才会进入 LX Sync Server 在线兜底。
 
@@ -95,12 +105,12 @@ Open-XiaoAI 通过运行在音箱上的 client 补丁程序，把小爱音箱的
 它的特点：
 
 - **接管「小爱同学」**：原生唤醒 + 原生 ASR 保留，回答换成你的 LLM 和 TTS；音乐大声时也能用（见上）
-- **MCP 工具**：音乐、播报、定时任务、家电（Home Assistant）、联网搜索，共 21 个
+- **MCP 工具**：音乐、播报、定时任务、家电（Home Assistant）、联网搜索，共 22 个
 - **音乐态语音控制**：放歌时说「下一首」「停下」「大点声」不用喊唤醒词；点歌/换内容走三层路由（工具路由 → 分类器 → codex 兜底）
 - **放歌自动降音量**：起播前压低音量让麦克风听得清人声，停播还原
 - **指示灯**：正在处理你的话（识别/思考/路由）时点亮，噪声不亮
 - 文本流式输出，逐句 TTS 播放，可按关键词或唤醒词打断
-- 提供 Web 管理台：配置、唤醒词、路由漏斗、智能体上下文、定时任务、TTS 试播
+- 提供 Web 管理台：配置、唤醒词、路由漏斗、智能体上下文、定时任务、TTS 试播、音频通道对比（`/ui/#audiotest`）
 
 文档：[`apps/chat/README.md`](apps/chat/README.md)
 
@@ -224,7 +234,7 @@ vim config.yaml
 
 默认监听 `ws://0.0.0.0:4399`。
 
-启动后可访问 `http://你的IP:4399/admin` 打开 Web 管理页。管理页会读取并覆盖当前 `-config` 指定的 YAML 文件；如需暴露到局域网之外，请先在 `auth.users` 配置 Basic Auth。
+启动后可访问 `http://你的IP:4399/ui/` 打开 Web 管理页。管理页会读取并覆盖当前 `-config` 指定的 YAML 文件；如需暴露到局域网之外，请先在 `auth.users` 配置 Basic Auth。
 
 文档：[`apps/chat/README.md`](apps/chat/README.md)
 

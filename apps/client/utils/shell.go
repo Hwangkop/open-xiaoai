@@ -245,6 +245,8 @@ func StopTTS() {
 		notifyTTSEnd()
 	}
 	if hadManagedPlayback {
-		stopNativePlayback(stopNativePlaybackScript)
+		// 只确保 tts_play.sh 退出；不要再全量 stop mediaplayer。
+		// 原生 TTS 由服务端 stop media:"mibrain" 处理，全量 stop 会把背景音乐一起清掉。
+		stopNativePlayback(`pkill -f 'tts_play.sh' >/dev/null 2>&1 || true`)
 	}
 }

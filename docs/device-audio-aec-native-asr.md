@@ -527,3 +527,127 @@ native_wake:
   takeover_enabled: true   # 默认关，验收后再打开
   max_seconds: 25          # 单轮上限，超时强制解冻
 ```
+
+## 13. 音量分层（2026-11-02 真机更正）
+
+此前“`mysoftvol` 只影响 `pcm.Playback` 客户端、不影响 mediaplayer 音乐”的结论错误。真机调节 `mysoftvol` 时，音乐听感跟着改变，而 mediaplayer 报告的 volume 可以保持不变；软件字段不变不能证明音乐的实际响度不变。
+
+按本机实测，`mysoftvol` 应作为影响音乐的全局输出增益管理，保持固定，**不得作为豆包 TTS 的独立音量旋钮**。这里的“全局”描述音乐也受影响的观察，不表示所有 ALSA PCM 都必经它；`notify` 在本机配置中使用独立 softvol 后接同一个 dmixer。
+
+| 音量层/路径 | 控制 | 实测结论与用途 |
+|---|---|---|
+| 硬件输出 | `Master` | 硬件输出级控制，不用于 TTS 独立音量 |
+| 旧 WAV 路径 `aplay -D Playback` | `mysoftvol` | 改变时音乐也变；淘汰为 TTS 独立音量方案，保持固定 |
+| 目标 WAV 路径 `aplay -D notify` | `notifyvol`（0–255） | 短音与真实豆包 TTS 均确认响度变化、音乐听感不变；保留为 TTS 通道，原生唤醒/MCP 待验收 |
+| 音乐 | `mediaplayer volume` | 继续用于音乐音量和 ducking；与真实 notify TTS 的双向隔离待验收 |
+
+语音/MCP 语义：泛说“声音大点/小点/调小声音/静音”默认指**音乐**（`set_volume`）；只有明确说“说话声/说话的声音/豆包声音/回复声音/TTS 音量”才用 `set_tts_volume`。两个工具描述互相指向，避免模型把“调小声音”误判成 TTS。
+
+本机 `/etc/asound.conf` 的两条路径为：
+
+```text
+Playback → softvol(mysoftvol) → dmixer → hw:0,2
+notify   → softvol(notifyvol) → dmixer → hw:0,2
+```
+
+本轮实测记录：
+
+- 调节 `mysoftvol`，用户确认音乐响度变化；mediaplayer 的 volume 字段未随之变化。
+- 同一短 WAV 用 `aplay -D notify` 播放，分别调节 `notifyvol=60/180`，并做 `0/255` 极值复测；aplay 返回码均为 0，音乐前后 status 为 1、volume 字段不变。用户最终确认测试音变响、音乐没有变小。早期 60/180 反馈曾不明显，因此仍需真实语音对照。
+- 测试后 `mysoftvol`、`notifyvol` 均恢复到测试前的 120；120 是本次现场值，不是建议默认值。
+- softvol 配置的最低增益是 −51 dB，0 档不能据此当作可靠的完全静音功能。
+
+**管理台五通道实测（2026-11-02，用户人耳）**：
+
+| 播放通道 | 音量旋钮 | 实测结果 |
+|---|---|---|
+| `aplay -D notify` | `notifyvol` | 只改说话声，音乐不变；TTS 与音乐**共存** |
+| `aplay -D Playback` | `mysoftvol` | 同时改音乐和说话声；TTS 与音乐共存，但音量不独立 |
+| `miplayer -f` | `mysoftvol` | 只改音乐，miplayer 的说话声音量不变；TTS 与音乐共存，但 TTS 音量不可单独调 |
+| `mediaplayer mibrain` | mediaplayer volume | 音乐停/被替换，**不共存** |
+| `mediaplayer common` | mediaplayer volume | 音乐停/被替换，**不共存** |
+
+**已接入（2026-11-02）**：豆包 WAV 从 `aplay -D Playback` 改为 `aplay -D notify`，`tts.volume`（0-100）映射到 `notifyvol`；新增 `set_tts_volume` MCP 工具。`mysoftvol` 保持固定。配置项：
+
+```yaml
+tts:
+  format: "wav"          # WAV 才会走 aplay/notify
+  player: "auto"         # auto / aplay / miplayer
+  wav_device: "notify"   # notify（独立 TTS 音量）/ playback（旧实验通道）
+  volume: 60             # 0-100，映射到 notifyvol
+```
+
+实现位置：`apps/chat/speaker.go` 的 `PlayURL` / `ttsPlaybackSettings`；音量记录落 `tts-volume.json`（MCP/语音设置后跨重启保留，配置页保存后清除，以 `tts.volume` 为准）。`notifyvol` 为通道级音量，其他使用 notify PCM 的声音也可能受影响，不宣称它只控制豆包。
+
+**2026-11-02 21:18 管理台真实 TTS 验收**：服务端已按 `format=wav, volume=60, player=auto, wav_device=notify` 部署；客户端实际执行 `amixer -c 0 sset notifyvol 153; wget ... | aplay -D notify -`。`notifyvol=153`、`mysoftvol=120` 不变，日志中没有 `mphelper pause`/stop；用户确认听到 TTS 时背景音乐仍在放。
+
+**剩余验收**：`set_tts_volume` MCP/语音调 80/40 的对照、原生唤醒（小爱同学）完整流程、音乐 ducking 时 TTS 不变、重启后音量恢复。每次记录 mixer 值、音乐状态和人耳反馈，完成后恢复测试前值。短音通过不等于原生唤醒完整流程通过。
+
+## 14. 原生 TTS 的 media 标记与隔离边界（2026-11-02 实测）
+
+`ubus monitor` 抓到的真实调用：
+
+```json
+// 原生 TTS（aivs 发出）
+{"method":"player_play_url","data":{"type":1,"media":"mibrain",
+  "url":"https://speech.ai.xiaomi.com/speech/1.0/tts_token?token=...",
+  "dialog_id":"...","instruction_id":"..."}}
+// 音乐（网易云）
+{"method":"player_play_url","data":{"type":1,
+  "url":"http://m801.music.126.net/....mp3..."}}
+```
+
+结论：
+
+- 原生 TTS 请求带 `media="mibrain"`，我们的 URL 音乐走默认/common；两个名称不代表播放器状态严格隔离。
+- 早期静音实验里 stop mibrain 后音乐 status 仍为 1，只是单次状态观察；后续五通道实验确认 mibrain 播放可接管/替换音乐，不能把“只清 TTS、绝不动音乐”当成普遍保证。
+- `player_get_context.is_tts` 在两种播放里都可能为 1，不能用来区分。
+- 接管时先 `stop mibrain` 清掉已经排队的 TTS，再冻 `mico_aivs_lab` 防止它继续生成；
+  我们的 TTS 走 aplay，不经过这个队列。
+- 只 freeze aivs 不够：final 之后 TTS 请求可能已经进队列；
+  而且我们的 TTS 是逐句播放的，接管必须等整轮回复结束，不能在单句结束时解冻。
+- 客户端在 `instruction.log` 终态出现时用 inotify 低延迟唤醒并本地先 SIGSTOP aivs，
+  服务端再决定接管/释放，尽量抢在 TTS 请求之前。
+- **解冻后迟到的原生 TTS（2026-11-02 实测）**：aivs 被冻住时云端回答可能已经排队，
+  解冻后它会补发 `SpeechSynthesizer.Speak` 并播放（实测“好嘞，那我开始播放了”在解冻同一秒出现）。
+  `EndNativeTakeover` 现在会开 3 秒兜底窗口，在 0/150/500/1500/3000ms 各清一次 `mibrain`；
+  窗口内收到原生 `Speak` 也会再次请求 stop。**用户仍听到原生 TTS，方案未通过隔离验收**；请求执行成功不代表声学隔离成功。
+
+## 15. 接管后的暂停与迟到动作复核（2026-11-02）
+
+本轮直接读取 3060 日志（chat PID 19900）和音箱状态，确认：
+
+| 时间 | 观察 |
+|---|---|
+| 22:29:40 | 接管开始，日志 music=false；这是入场快照，随后本轮可以新起音乐 |
+| 22:29:43 | aivs 冻结时播放器 status=1、volume=20 |
+| 22:29:52 | 豆包结束、解冻；原生 Speak 与 AudioPlayer.Play 到达，mibrain 补停同时运行 |
+| 22:29:52 | 我们主动请求 native_continue_dialog 再开麦 |
+| 22:29:57–58 | tracker 读到 status=2，随后退出音乐态 |
+| 22:36 现场读取 | 播放器仍 status=2、volume=20 |
+
+代码确认自动续听没有配套的 ASR 窗口管理，能解释“恢复后又暂停、音乐态丢失”的一条路径。不能凭没有不带 media 的 stop/pause 命令就排除我们的主动开麦副作用；日志也不足以把每一次暂停唯一归因于开麦、mibrain stop 或原生播放动作。
+
+**本轮修正（23:20 已部署）**：音乐态回答结束不自动再开原生麦克风；非音乐态续听先登记 ASR 窗口，以匹配 dialog 的空 final/Finish 或 8 秒超时关闭；超时带窗口序号，不关闭新一轮窗口。迟到 TTS 兜底窗口改在解冻前生效，stop 日志只报告命令确认，不宣称声音被彻底隔离。
+
+**仍未解决**：冻结只暂停处理，解冻仍会处理积压的 Speak、AudioPlayer.Play 等动作。3 秒反复 stop 已有失败证据；重启 aivs 已影响音频并回退。下一步应核对按 dialog 的 ASR-only/下行指令过滤，使接管轮的 TTS、播放和音量动作在执行前被阻止。参考项目 `open-speaker-llm/xiaomi_ai_llm` 的 `device/native_asr/native_asr.c` 提供这类实现；当前固件 SDK 字符串中存在对应 toJson/OurReader 符号，但动态绑定、ABI 和真机行为尚未验证，不可直接宣称兼容或加载临时实验库。
+
+
+## 16. SDK 指令隔离现场进展（2026-11-02 23:20 起）
+
+实现与回滚入口：[`tools/native-guard/README.md`](../tools/native-guard/README.md)。当前固件 SDK 的真实解析钩子经 31 项独立用例验证，client/chat/管理台已临时部署 instruction 模式。用户确认“小爱 TTS 没有声音了”；日志捕获同 dialog Speak/SpeakStream/AudioPlayer.Play 被拦截，逐轮收尾不再发 SIGCONT/stop mibrain。
+
+音乐仍停止且重新拉起，**共存未验收通过**。23:24–25 的 ubus 抓包包含 player_wakeup start，随后 status=0；恢复逻辑 mphelper play 失败后重拉 URL。固件 mipns 自带直接 ubus 命令，绕过 wakeup.sh，解释了只改 wakeup 脚本的复测仍失败；该覆盖已撤销。
+
+23:31 改为临时覆盖 ubus CLI，仅在有效租约下跳过 player_wakeup start/stop/multistart，其他调用委托原二进制。手动重放同一 start 请求已记录跳过且 status=1；这不能替代用户真实唤醒共存验收。钩子仅阻止本地下行执行，并未禁止小爱云端生成 TTS。
+
+
+23:33 真实唤醒复测：用户反馈唤醒时音乐仍在，思考时消失、较久后才重新播放。服务端当时仍会在 BeginNativeTakeover 后无条件执行 mphelper play，即便焦点过滤已让音乐保持播放；随后出现重拉 URL/seek。23:36 增加“查询 status=1 则直接返回”的恢复前检查，避免重复 play/重拉/seek，已部署 chat PID 6800；新增回归用例通过。随后用户明确反馈“一直在，回答后也继续”，确认本轮思考/TTS/结束后的音乐共存；不能扩展为连续 5 轮全量验收。
+
+
+复测日志：23:40:31–36、23:40:49–56、23:41:39–51 三轮均使用已认领指令隔离，客户端记录 notify/aplay 播放，未再出现 mphelper play、重拉 URL 或 seek。用户已确认其中本次询问的全程音乐继续。23:42 用户明确说“音乐停了吧”后发生停止音乐，属于明确停止指令，不应算作接管自动中断。连续 5 轮逐次人耳记录、打断、开关关闭与重启回滚验收仍保留待办；此时尚未接入开机重建。
+
+
+2026-11-03 00:03 第二次整机重启验证通过：boot_id 已更换；aivs=2610 的 ready 与 maps 匹配；aivs 启动脚本和 ubus 两处覆盖均由开机流程重建。00:03:07 client 重连，00:03:08 服务端确认 requested=instruction / effective=instruction / enabled=true，12 秒租约恢复刷新。再次执行 boot 前后 aivs/mediaplayer/mipns/client PID 均相同，未遗留失败标记。首次真实重启触发过失败回退，兼容 client 仍能上线；修正稳定等待后成功。9 项启动状态机测试、10 项焦点过滤测试及 client Go 构建/测试与 ARM 构建通过。开机加载验收与人耳连续 5 轮验收分别记录，后者仍未完成。
+
+2026-11-03 重启后人耳复测：用户按“先播放音乐，再询问时间”的步骤明确反馈“音乐持续，只有豆包回答”。本次通过思考、豆包 TTS 与回答结束后的音乐共存及无原生 TTS 验收，确认开机自动加载后的实际效果；仅记本轮，不计为连续 5 轮验收完成。

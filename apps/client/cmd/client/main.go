@@ -9,8 +9,11 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -31,6 +34,18 @@ var (
 	flagSpeechHost     = flag.Bool("speech-host", false, "接管 speech.usock（原生助手不再处理语音，配合 init.sh 的 speech_host 模式）")
 	flagSpeechSocket   = flag.String("speech-socket", "/tmp/mico_aivs_lab/usock/speech.usock", "语音 socket 路径")
 	flagMicDevice      = flag.String("mic-device", "noop", "arecord 采集设备名（固件 dsnoop 共享设备：noop / Capture）")
+)
+
+const nativeAssistantName = "mico_aivs_lab"
+
+var (
+	// nativeGuardEnabled 由服务端同步：开启后，客户端一看到原生 ASR 的 final
+	// 就先本地 SIGSTOP 掉 mico_aivs_lab，抢在它发出 TTS 请求之前。
+	nativeGuardEnabled atomic.Bool
+	// nativeGuardGen/Claimed 用于兜底：预冻结后 30 秒内服务端没有确认接管，
+	// 主动解冻，避免服务端崩溃时把原生语音永久冻住。
+	nativeGuardGen     atomic.Int64
+	nativeGuardClaimed atomic.Bool
 )
 
 func basicAuthHeader(username, password string) string {
@@ -78,6 +93,7 @@ func (c *AppClient) connectWS(ctx context.Context, serverURL string, username, p
 func (c *AppClient) init(conn *websocket.Conn, cfg *runConfig) {
 	mgr := connect.GetMessageManager()
 	mgr.Init(conn)
+	go refreshInstructionGuard(conn)
 
 	connect.GetHandlers().SetEventHandler(onEvent)
 	connect.GetHandlers().SetStreamHandler(onStream)
@@ -90,6 +106,8 @@ func (c *AppClient) init(conn *websocket.Conn, cfg *runConfig) {
 	rpc.AddCommand("freeze_native", freezeNative)
 	rpc.AddCommand("unfreeze_native", unfreezeNative)
 	rpc.AddCommand("native_playback_state", nativePlaybackState)
+	rpc.AddCommand("native_guard", nativeGuard)
+	rpc.AddCommand("native_guard_release", nativeGuardRelease)
 	rpc.AddCommand("start_play", startPlay)
 	rpc.AddCommand("stop_play", stopPlay)
 	rpc.AddCommand("start_recording", c.startRecording)
@@ -112,6 +130,30 @@ func (c *AppClient) init(conn *websocket.Conn, cfg *runConfig) {
 						// 已有一个待处理的切换请求
 					}
 					return // 不转发给 Server
+				}
+			}
+		}
+		if event.Type == "NewLine" {
+			event.InstructionGuarded = instructionGuardClaimed(event.Line)
+		}
+		// 原生 ASR 终态：先确认 SDK 认领，否则走冻结兼容路径。
+		// 原生 TTS 的请求往往在 final 之后几十毫秒内发出，走服务端 RPC 再回来就晚了；
+		// 这里用 inotify 叫醒（见 monitor.newFileWake）+ 本地 kill，把窗口压到毫秒级。
+		if event.Type == "NewLine" && nativeGuardEnabled.Load() {
+			if text := parseInstructionText(event.Line); text != "" {
+				if event.InstructionGuarded {
+					event.InstructionGuarded = true
+					mgr.SendEvent("instruction", event)
+					return
+				}
+				if pid, err := utils.FreezeProcess(nativeAssistantName); err != nil {
+					log.Printf("⚠️ [native-guard] 终态识别预冻结失败: %v", err)
+				} else {
+					event.PreFrozen = true
+					log.Printf("❄️ [native-guard] 终态识别 → 本地预冻结 %s(pid=%d) text=%q", nativeAssistantName, pid, text)
+					go reportNativeProcesses()
+					startNativeProbe(pid)
+					armNativeGuardSafety()
 				}
 			}
 		}
@@ -164,6 +206,7 @@ func (c *AppClient) enableUsock() error {
 }
 
 func (c *AppClient) dispose() {
+	disableInstructionGuard()
 	connect.GetMessageManager().Dispose()
 	audio.GetPlayer().Stop()
 	audio.GetRecorder().StopRecording()
@@ -201,6 +244,125 @@ func parseInstructionText(line string) string {
 		return ""
 	}
 	return strings.TrimSpace(msg.Payload.Results[0].Text)
+}
+
+// nativeGuard 服务端同步"终端识别时是否本地预冻结原生助手"。
+func nativeGuard(req connect.Request) (connect.Response, error) {
+	var p struct {
+		Enabled  bool     `json:"enabled"`
+		Mode     string   `json:"mode"`
+		Keywords []string `json:"native_keywords"`
+	}
+	if req.Payload == nil {
+		return connect.ErrorResponse(req.ID, fmt.Errorf("缺少原生隔离配置")), nil
+	}
+	if err := json.Unmarshal(*req.Payload, &p); err != nil {
+		return connect.ErrorResponse(req.ID, err), nil
+	}
+	if p.Mode != "" && p.Mode != "freeze" && p.Mode != "instruction" {
+		return connect.ErrorResponse(req.ID, fmt.Errorf("未知原生隔离模式")), nil
+	}
+	instructionGuard.Lock()
+	defer instructionGuard.Unlock()
+	instructionGuard.enabled = false
+	_ = os.Remove(filepath.Join(instructionGuardDir, "policy"))
+	effective := "freeze"
+	if p.Enabled && p.Mode == "instruction" {
+		instructionGuard.keywords = append([]string(nil), p.Keywords...)
+		if err := writeInstructionLeaseLocked(); err != nil {
+			log.Printf("⚠️ [native-guard] 指令隔离不可用，回退冻结兼容路径：%v", err)
+		} else {
+			instructionGuard.enabled = true
+			effective = "instruction"
+		}
+	}
+	nativeGuardEnabled.Store(p.Enabled)
+	data, _ := json.Marshal(map[string]any{"mode": effective, "enabled": p.Enabled})
+	log.Printf("🛡️ [rpc] native_guard: enabled=%v mode=%s", p.Enabled, effective)
+	return connect.DataResponse(data), nil
+}
+
+// nativeGuardRelease 服务端判断本轮不接管时，立刻放行被本地预冻结的原生助手。
+func nativeGuardRelease(req connect.Request) (connect.Response, error) {
+	reason := "server"
+	if req.Payload != nil {
+		var p struct {
+			Reason string `json:"reason"`
+		}
+		if err := json.Unmarshal(*req.Payload, &p); err == nil && p.Reason != "" {
+			reason = p.Reason
+		}
+	}
+	// 标记"服务端已处理"，避免 30 秒兜底再解冻一次。
+	nativeGuardClaimed.Store(true)
+	if err := utils.UnfreezeProcess(nativeAssistantName); err != nil {
+		log.Printf("⚠️ [rpc] native_guard_release 失败: %v", err)
+		return connect.ErrorResponse(req.ID, err), nil
+	}
+	log.Printf("☀️ [rpc] native_guard_release: 已释放 %s（%s）", nativeAssistantName, reason)
+	return connect.SuccessResponse(), nil
+}
+
+// armNativeGuardSafety 兜底：预冻结后 30 秒内服务端既没确认接管、也没 release，
+// 说明服务端可能崩了/断线了，主动解冻，别把原生语音永久冻住。
+func armNativeGuardSafety() {
+	gen := nativeGuardGen.Add(1)
+	nativeGuardClaimed.Store(false)
+	time.AfterFunc(30*time.Second, func() {
+		if nativeGuardGen.Load() != gen || nativeGuardClaimed.Load() {
+			return
+		}
+		if err := utils.UnfreezeProcess(nativeAssistantName); err == nil {
+			log.Printf("🧹 [native-guard] 预冻结 30s 未被服务端确认，已自动解冻 %s", nativeAssistantName)
+		}
+	})
+}
+
+// startNativeProbe 预冻结后采样 4 秒设备状态，发给服务端落日志。
+// 用来回答"到底是谁在放 TTS、冻结有没有生效、音乐什么时候被停"。
+func startNativeProbe(frozenPID int) {
+	go func() {
+		start := time.Now()
+		mgr := connect.GetMessageManager()
+		for {
+			elapsed := time.Since(start)
+			if elapsed > 4*time.Second {
+				return
+			}
+			raw := ""
+			if res, err := utils.RunShellWithTimeout(
+				`ubus -t 1 call mediaplayer player_get_play_status 2>/dev/null`, 1500*time.Millisecond); err == nil && res != nil {
+				raw = strings.TrimSpace(res.Stdout)
+			}
+			playerPID, playerStopped := utils.NativePlaybackState()
+			aivsPID, aivsStopped := utils.NativeProcessState(nativeAssistantName)
+			mibrainPID, mibrainStopped := utils.NativeProcessState("mibrain_service")
+			_ = mgr.SendEvent("native_probe", map[string]any{
+				"t_ms":            elapsed.Milliseconds(),
+				"player_raw":      raw,
+				"player_pid":      playerPID,
+				"player_stopped":  playerStopped,
+				"aivs_pid":        aivsPID,
+				"aivs_stopped":    aivsStopped,
+				"mibrain_pid":     mibrainPID,
+				"mibrain_stopped": mibrainStopped,
+				"frozen_pid":      frozenPID,
+			})
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+}
+
+// reportNativeProcesses 预冻结时抓一份进程表，确认 TTS 到底挂在哪个进程上。
+func reportNativeProcesses() {
+	res, err := utils.RunShellWithTimeout(
+		`ps w 2>/dev/null | grep -Ei 'aivs|mibrain|tts|player|mips|mico' | head -30`, 2000*time.Millisecond)
+	if err != nil || res == nil {
+		return
+	}
+	_ = connect.GetMessageManager().SendEvent("native_procs", map[string]any{
+		"ps": strings.TrimSpace(res.Stdout),
+	})
 }
 
 // parseAuthFromURL 从 URL 查询参数解析认证信息，支持 username/password 或 u/p
@@ -483,7 +645,11 @@ func freezeNative(req connect.Request) (connect.Response, error) {
 		log.Printf("❄️ [rpc] freeze_native 失败 (id=%s): %v", req.ID, err)
 		return connect.ErrorResponse(req.ID, err), nil
 	}
-	log.Printf("❄️ [rpc] freeze_native 完成 (id=%s): pid=%d", req.ID, pid)
+	if name == nativeAssistantName {
+		// 服务端确认接管：后续由它负责解冻，30 秒兜底计时器不要再插手。
+		nativeGuardClaimed.Store(true)
+	}
+	log.Printf("❄️ [rpc] freeze_native 完成 (id=%s): name=%s pid=%d", req.ID, name, pid)
 	data, _ := json.Marshal(map[string]any{"pid": pid})
 	return connect.DataResponse(json.RawMessage(data)), nil
 }

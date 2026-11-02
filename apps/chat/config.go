@@ -74,6 +74,13 @@ type TTSConfig struct {
 	Emotion string `yaml:"emotion"`
 	// 音调，0 为正常，范围约 -1.0 ~ 1.0
 	Pitch float64 `yaml:"pitch"`
+	// Volume 豆包 TTS 音量（0-100），WAV 路径映射到 notifyvol。
+	// 它只控制 notify 通道；mysoftvol 是全局输出增益，会影响音乐，不能拿来调 TTS。
+	Volume int `yaml:"volume"`
+	// Player 播放器选择：auto（按音频格式）/ aplay / miplayer。
+	Player string `yaml:"player"`
+	// WavDevice WAV 用 aplay 时的输出设备：notify（独立 TTS 音量）/ playback（旧实验通道）。
+	WavDevice string `yaml:"wav_device"`
 }
 
 func (c TTSConfig) UsesDoubao() bool {
@@ -248,11 +255,13 @@ type MusicDuckConfig struct {
 // NativeWakeConfig 原生唤醒接管（音乐态）。
 //
 // 音乐大声时只有原生 KWS 听得见「小爱同学」，但它会让小爱继续回答。
-// 打开这个开关后，原生 ASR 出 final 时冻结设备播放器（原生 TTS 和音乐一起停），
-// 由豆包接管这一轮对话，播完再解冻。详见 docs/device-audio-aec-native-asr.md。
+// 打开后由豆包接管原生 final；兼容模式冻结 aivs，实验模式在派发前按 dialog 过滤指令。
+// 音乐共存须单独验收，详见 docs/device-audio-aec-native-asr.md。
 type NativeWakeConfig struct {
 	Enabled bool `yaml:"takeover_enabled"`
-	// Mode 接管方式：freeze=冻结播放器（默认）；speech_host=接管 speech.usock。
+	// IsolationMode：freeze 为兼容冻结；instruction 为实验性 dialog 指令隔离。
+	IsolationMode string `yaml:"isolation_mode"`
+	// Mode 旧宿主实验标记：freeze=冻结助手；speech_host=接管 speech.usock。
 	// 真正决定模式的是 client 的 -speech-host 参数，这里只用于文档与启动检查。
 	Mode string `yaml:"mode"`
 	// MaxSeconds 单轮接管的最长时长（秒），超时强制解冻，避免音乐永久停住。<=0 用默认 25。
@@ -342,6 +351,9 @@ func defaultConfig() *AppConfig {
 			BitRate:    defaultDoubaoBitRate,
 			SampleRate: defaultDoubaoSampleRate,
 			SpeechRate: defaultDoubaoSpeed,
+			Volume:     defaultTTSVolume,
+			Player:     defaultTTSPlayer,
+			WavDevice:  defaultTTSWavDevice,
 		},
 		Doubao2API: Doubao2APIConfig{
 			BaseURL: "http://127.0.0.1:9090",

@@ -48,12 +48,19 @@ type Engine struct {
 	// speechHostActive 语音宿主模式：原生助手已被摘掉，语音由 speech.usock 直接送上来
 	speechHostActive atomic.Bool
 
+	// localASRDisabled 管理台实验开关：关闭后服务端不再处理 mic 流和本地 kws，
+	// 原生小爱 ASR（instruction）不受影响。用于隔离本地 ASR 对音频测试的干扰。
+	localASRDisabled atomic.Bool
+
 	// nativeTurn 标记本轮由「小爱同学」触发：这种轮次结束后不续开本地对话窗口，
 	// 否则本地 ASR 会把小爱的播报、环境声继续当成指令送给豆包。
 	nativeTurn atomic.Bool
 	// nativeChain 连续的原生轮数：回答完自动重开一次原生收音，实现连续对话；
 	// 达到上限就不再自动续，需要重新喊「小爱同学」。
 	nativeChain atomic.Int32
+	// turnSeq 回复轮次。旧轮次被新轮次打断后，旧协程不能再去解冻/续听，
+	// 否则会把新轮次的接管提前结束，让小爱 TTS 漏出来。
+	turnSeq atomic.Uint64
 
 	// codex 非空且 provider=codex 时，走 Codex CLI（一次性 exec）
 	codex *CodexClient
@@ -144,12 +151,16 @@ type instructionEvent struct {
 
 type newLineWrapper struct {
 	NewLine string `json:"NewLine"`
+	// PreFrozen 客户端在发这条识别结果前已本地冻结原生助手（抢 TTS 请求窗口）。
+	PreFrozen          bool `json:"pre_frozen"`
+	InstructionGuarded bool `json:"instruction_guarded"`
 }
 
 type logMessage struct {
 	Header struct {
 		Namespace string `json:"namespace"`
 		Name      string `json:"name"`
+		DialogID  string `json:"dialog_id"`
 	} `json:"header"`
 	Payload struct {
 		IsFinal bool `json:"is_final"`
@@ -158,6 +169,12 @@ type logMessage struct {
 		} `json:"results"`
 	} `json:"payload"`
 }
+
+// SetLocalASRDisabled 关闭/开启本地 ASR（mic 流与 kws 事件）；不影响原生小爱 ASR。
+func (e *Engine) SetLocalASRDisabled(disabled bool) { e.localASRDisabled.Store(disabled) }
+
+// LocalASRDisabled 当前是否关闭了本地 ASR。
+func (e *Engine) LocalASRDisabled() bool { return e.localASRDisabled.Load() }
 
 // OnEvent is called by the WebSocket server when an event arrives from a client.
 func (e *Engine) OnEvent(event connect.Event) {
@@ -172,6 +189,31 @@ func (e *Engine) OnEvent(event connect.Event) {
 		e.speaker.UpdateStatus(dataStr)
 	case "instruction":
 		e.handleInstruction(data)
+	case "native_probe":
+		// 客户端预冻结后的设备状态采样（每 100ms 一条，只用于定位 TTS/音乐时序）
+		var p struct {
+			TMs            int64  `json:"t_ms"`
+			PlayerRaw      string `json:"player_raw"`
+			PlayerPID      int    `json:"player_pid"`
+			PlayerStopped  bool   `json:"player_stopped"`
+			AivsPID        int    `json:"aivs_pid"`
+			AivsStopped    bool   `json:"aivs_stopped"`
+			MibrainPID     int    `json:"mibrain_pid"`
+			MibrainStopped bool   `json:"mibrain_stopped"`
+			FrozenPID      int    `json:"frozen_pid"`
+		}
+		if err := json.Unmarshal(data, &p); err == nil {
+			log.Printf("🔬 [native-probe] +%dms player=%s(pid=%d,stopped=%v) aivs=pid%d(stopped=%v) mibrain=pid%d(stopped=%v) frozen=%d",
+				p.TMs, strings.TrimSpace(p.PlayerRaw), p.PlayerPID, p.PlayerStopped,
+				p.AivsPID, p.AivsStopped, p.MibrainPID, p.MibrainStopped, p.FrozenPID)
+		}
+	case "native_procs":
+		var p struct {
+			PS string `json:"ps"`
+		}
+		if err := json.Unmarshal(data, &p); err == nil {
+			log.Printf("🔍 [native-procs]\n%s", p.PS)
+		}
 	case "native_wake":
 		// 语音宿主模式：mips 的 KWS 命中「小爱同学」，紧接着会推 ASR 音频上来
 		var ev struct {
@@ -186,11 +228,11 @@ func (e *Engine) OnEvent(event connect.Event) {
 		e.armDialogFor(30 * time.Second)
 		// mips 一开麦就会抢走音频设备，播放器会停。
 		// 告诉音乐状态机"正在收音"，否则轮询会把这次停当成"歌播完了"自动切歌。
-		e.speaker.BeginNativeASRWindow()
+		seq := e.speaker.BeginNativeASRWindow()
 		log.Printf("🎙️ 原生唤醒（语音宿主，activate=%d）→ 进入对话模式，收音窗口已开", ev.Activate)
 		// 兜底：20 秒没有结果就自动关窗（宿主那边 20 秒也会停采集）
 		time.AfterFunc(21*time.Second, func() {
-			e.speaker.EndNativeASRWindow()
+			e.speaker.EndNativeASRWindowFor(seq)
 			e.speechHostActive.Store(false)
 		})
 	case "kws":
@@ -201,6 +243,10 @@ func (e *Engine) OnEvent(event connect.Event) {
 			Keyword string `json:"Keyword"`
 		}
 		_ = json.Unmarshal(data, &ev)
+		if e.LocalASRDisabled() {
+			log.Printf("🔇 [local-asr] 已关闭，忽略 kws: %s %q", ev.Type, ev.Keyword)
+			return
+		}
 		log.Printf("🔥 唤醒词: %s %q", ev.Type, ev.Keyword)
 
 		if ev.Type == "Keyword" && e.Config().IsAIWakeWord(ev.Keyword) {
@@ -605,7 +651,9 @@ func (e *Engine) consumeArmed() bool {
 }
 
 func (e *Engine) handleInstruction(data []byte) {
-	line := instructionLineFromEventData(data)
+	line, preFrozen := parseInstructionEvent(data)
+	var guardEvent newLineWrapper
+	_ = json.Unmarshal(data, &guardEvent)
 	if line == "" {
 		return
 	}
@@ -614,37 +662,65 @@ func (e *Engine) handleInstruction(data []byte) {
 	if err := json.NewDecoder(strings.NewReader(line)).Decode(&msg); err != nil {
 		return
 	}
+	log.Printf("🧾 [instruction] %s.%s final=%v pre_frozen=%v", msg.Header.Namespace, msg.Header.Name, msg.Payload.IsFinal, preFrozen)
 
+	// 客户端已经先冻结了 aivs。本轮如果走不到接管（退出词/家电指令/未启用等），
+	// 必须立刻放行，否则小爱原生回答会被我们自己冻住。
+	takeoverHandled := false
+	defer func() {
+		if preFrozen && !takeoverHandled {
+			e.speaker.ReleaseNativePreFreeze("本句未进入接管")
+		}
+	}()
+
+	// 钩子已认领的下行动作即使出现在固件原始日志中，也不能当成实际播报。
+	if guardEvent.InstructionGuarded && msg.Header.Namespace != "SpeechRecognizer" &&
+		!(msg.Header.Namespace == "Dialog" && msg.Header.Name == "Finish") {
+		log.Printf("🛡️ [native-guard] 忽略已拦截指令日志：%s.%s", msg.Header.Namespace, msg.Header.Name)
+		return
+	}
 	// 小爱的播报事件：用来判断"现在是不是小爱在说话"，
 	// 避免它的声音被我们的麦克风录下来又送给豆包，也避免两边同时出声。
 	switch {
 	case msg.Header.Namespace == "SpeechSynthesizer" && msg.Header.Name == "Speak":
-		if e.speaker.TakeoverActive() {
-			// 接管期间这个 Speak 本来就被冻住了，别让它把我们的上行识别一起关掉
-			log.Printf("🔇 接管中忽略原生播报事件（已被冻结）")
+		if e.speaker.TakeoverActive() || e.speaker.LateNativeTTSSuppressed() {
+			// 冻结晚于 TTS 请求，或刚解冻 aivs 补发了排队的回答：
+			// 再清一次 mibrain 队列兜底（不影响音乐）
+			log.Printf("⚠️ [native-tts] 接管/兜底窗口内收到原生 Speak 事件，清空 mibrain 队列")
+			go e.speaker.StopNativeTTS("Speak 事件兜底")
 			return
 		}
 		e.setXiaoaiSpeaking(true)
-		log.Printf("🔊 小爱开始播报（暂停上行识别）")
+		log.Printf("🔊 [native-tts] 小爱开始播报（暂停上行识别）")
 		return
 	case msg.Header.Namespace == "SpeechSynthesizer" && msg.Header.Name == "FinishSpeakStream":
 		e.setXiaoaiSpeaking(false)
-		log.Printf("🔇 小爱播报结束")
+		log.Printf("🔇 [native-tts] 小爱播报结束")
 		return
 	case msg.Header.Namespace == "Dialog" && msg.Header.Name == "Finish":
 		e.setXiaoaiSpeaking(false)
+		if !e.speaker.TakeoverActive() {
+			e.speaker.EndNativeASRDialog(msg.Header.DialogID)
+		}
 		return
 	}
 
 	if msg.Header.Namespace != "SpeechRecognizer" || msg.Header.Name != "RecognizeResult" {
 		return
 	}
-	if !msg.Payload.IsFinal || len(msg.Payload.Results) == 0 || msg.Payload.Results[0].Text == "" {
+	if !msg.Payload.IsFinal {
+		e.speaker.ObserveNativeASRDialog(msg.Header.DialogID)
+		return
+	}
+	if len(msg.Payload.Results) == 0 || strings.TrimSpace(msg.Payload.Results[0].Text) == "" {
+		if !e.speaker.TakeoverActive() {
+			e.speaker.EndNativeASRDialog(msg.Header.DialogID)
+		}
 		return
 	}
 
 	text := msg.Payload.Results[0].Text
-	log.Printf("🗣️ 用户: %s", text)
+	log.Printf("🗣️ 用户: %s（pre_frozen=%v）", text, preFrozen)
 	// 最近识别面板也记一份，标记来源；否则只能看到 PC ASR，分不清这句是谁识别的。
 	recordUtterance(utteranceRecord{Text: text, Source: "xiaoai"})
 	cfg := e.Config()
@@ -656,8 +732,9 @@ func (e *Engine) handleInstruction(data []byte) {
 		return
 	}
 
-	// 原生唤醒接管：音乐播放中，小爱的 ASR final 直接交给主助手
-	if e.tryNativeTakeover(text) {
+	// 原生唤醒接管：小爱的 ASR final 直接交给主助手
+	if e.tryNativeTakeover(text, guardEvent.InstructionGuarded) {
+		takeoverHandled = true
 		return
 	}
 
@@ -681,12 +758,9 @@ func (e *Engine) handleInstruction(data []byte) {
 	// 只喊触发词、没有实际内容 → 进入对话模式，等下一句
 	if cfg.IsBareTrigger(text) {
 		e.armDialog()
-		// 掐掉小爱对"豆包"这两个字的困惑式回复，避免它自说自话
-		go func() {
-			if err := e.speaker.StopNativePlayback(); err != nil {
-				log.Printf("⚠️ stop_native failed: %v", err)
-			}
-		}()
+		// 只清小爱 TTS 的 mibrain 队列；不要用 StopNativePlayback，
+		// 那会把 mediaplayer 整条队列（包括音乐）一起停掉。
+		go e.speaker.StopNativeTTS("裸触发词")
 		log.Printf("👂 已进入对话模式（%s 内下一句直接进 AI）", dialogArmWindow)
 		return
 	}
@@ -723,7 +797,16 @@ const maxNativeChainTurns = 6
 
 // turnKey 归一化一句话：去标点、去唤醒词，用于判断两路 ASR 是不是在说同一句。
 func turnKey(text string) string {
-	s := stripPunct(text)
+	s := strings.Map(func(r rune) rune {
+		if r >= '！' && r <= '～' {
+			r -= 0xfee0
+		}
+		if unicode.IsSpace(r) || unicode.IsPunct(r) {
+			return -1
+		}
+		return unicode.ToLower(r)
+	}, text)
+	s = stripPunct(s)
 	for _, w := range []string{"小爱同学", "豆包豆豆", "豆包"} {
 		s = strings.ReplaceAll(s, w, "")
 	}
@@ -754,15 +837,15 @@ func (e *Engine) releaseTurn() {
 	e.turnMu.Unlock()
 }
 
-// tryNativeTakeover 处理“小爱同学”这一轮：冻结设备播放器，把文本交给主助手。
+// tryNativeTakeover 处理“小爱同学”这一轮：冻结原生助手，把文本交给主助手。
 // 不限于音乐态——不放歌时同样接管，只是没有音乐需要恢复。
 // 返回 true 表示已经接管，调用方不要再走下面的路由分支。
-func (e *Engine) tryNativeTakeover(text string) bool {
+func (e *Engine) tryNativeTakeover(text string, guarded ...bool) bool {
 	cfg := e.Config()
 	if !cfg.NativeWake.Enabled || strings.TrimSpace(text) == "" {
 		return false
 	}
-	// 家电类指令仍交还小爱：冻了播放器但动作已经执行会很割裂
+	// 家电类指令仍交还小爱：冻了原生助手但动作已经执行会很割裂
 	if kw := cfg.nativeKeyword(text); kw != "" {
 		log.Printf("🏠 接管跳过：命中原生指令（%s），交还小爱", kw)
 		return false
@@ -770,19 +853,23 @@ func (e *Engine) tryNativeTakeover(text string) bool {
 	// 同一句话可能已经被本地 ASR 送去豆包了：不重复问，但还是要冻结小爱，
 	// 否则它会自己答一遍。用较短的上限兜底，避免白冻 25 秒。
 	if !e.claimTurn(text) {
-		if err := e.speaker.BeginNativeTakeover(8 * time.Second); err != nil {
+		if err := e.speaker.BeginNativeTakeover(8*time.Second, guarded...); err != nil {
 			log.Printf("⚠️ 重复句补冻结失败: %v", err)
 		} else {
 			log.Printf("🔁 接管跳过：本地 ASR 已处理过 %q，只冻结小爱", text)
 		}
 		return true
 	}
+	// 冻结前先记位置：原生 dialog 一旦把播放器停掉，位置就取不到了。
+	e.speaker.RememberMusicPosition()
 	max := time.Duration(cfg.NativeWake.MaxSeconds) * time.Second
-	if err := e.speaker.BeginNativeTakeover(max); err != nil {
+	start := time.Now()
+	if err := e.speaker.BeginNativeTakeover(max, guarded...); err != nil {
 		e.releaseTurn()
 		log.Printf("⚠️ 原生唤醒接管失败，回退原生路径: %v", err)
 		return false
 	}
+	log.Printf("⏱️ [native] 接管冻结完成，耗时 %v（music=%v）", time.Since(start).Round(time.Millisecond), e.speaker.MusicPlaying())
 	e.setXiaoaiSpeaking(false)
 	e.nativeTurn.Store(true)
 	log.Printf("❄️ 原生唤醒接管：%q 交给主助手", text)
@@ -791,12 +878,17 @@ func (e *Engine) tryNativeTakeover(text string) bool {
 	return true
 }
 
-func instructionLineFromEventData(data []byte) string {
+func parseInstructionEvent(data []byte) (string, bool) {
 	var wrapper newLineWrapper
 	if err := json.Unmarshal(data, &wrapper); err != nil {
-		return ""
+		return "", false
 	}
-	return wrapper.NewLine
+	return wrapper.NewLine, wrapper.PreFrozen
+}
+
+func instructionLineFromEventData(data []byte) string {
+	line, _ := parseInstructionEvent(data)
+	return line
 }
 
 // --- Message handling (from MiGPTEngine.onMessage) ---
@@ -829,6 +921,7 @@ func (e *Engine) startMessage(text string, authorized bool) {
 	e.cancelFunc = cancel
 	e.lastMsgTS = time.Now().UnixMilli()
 	e.mu.Unlock()
+	turnID := e.turnSeq.Add(1)
 
 	stopTTS := func() {
 		// 停掉小爱自己的回复：noop 采集模式下固件的 ASR 和原生回复是同一套流程，
@@ -840,8 +933,11 @@ func (e *Engine) startMessage(text string, authorized bool) {
 			// 播报会抢音频设备，位置会丢；先记下来，播完跳回去
 			e.speaker.RememberMusicPosition()
 			log.Println("🎵 音乐播放中，跳过停原生播放")
-		} else if err := e.speaker.StopNativePlayback(); err != nil {
-			log.Printf("⚠️ stop_native failed: %v", err)
+		} else {
+			// 不再用 StopNativePlayback 全量 stop：MusicPlaying() 是内存状态，
+			// 重启/原生停播后可能与真实播放器不一致，全量 stop 会把 common 上的音乐清掉。
+			// 只清小爱 TTS 的 mibrain 队列，音乐队列一律不动。
+			e.speaker.StopNativeTTS("开始处理新消息")
 		}
 		if err := e.speaker.StopTTS(); err != nil {
 			log.Printf("⚠️ stop_tts timeout/failed: %v", err)
@@ -852,25 +948,24 @@ func (e *Engine) startMessage(text string, authorized bool) {
 	} else {
 		go stopTTS() // 轻打断：终止 client 端当前 TTS，不阻塞 AI 请求准备
 	}
+	takeoverEpoch := e.speaker.TakeoverEpoch()
 	go func() {
 		e.handleMessage(ctx, text, authorized)
+		// 已经被更新的轮次接管：收尾（解冻/续听）交给新轮次，老的不能插手。
+		if e.turnSeq.Load() != turnID {
+			log.Printf("⏭️ 旧轮次收尾跳过（turn %d 已被新轮次接管）", turnID)
+			return
+		}
+		// 接管必须等整轮回复播完才结束：我们的 TTS 是逐句播放的，
+		// 单句结束就解冻会让小爱在后面几句播放时把原生 TTS 说出来。
+		if takeoverEpoch != 0 {
+			e.speaker.EndNativeTakeoverFor(takeoverEpoch, "回答结束")
+		}
 		// 这一轮是小爱唤醒触发的：不续开本地对话窗口。
 		// 本地 ASR 听到的往往是小爱的播报或环境声，继续送给豆包只会自说自话。
 		if e.nativeTurn.Swap(false) {
 			e.disarmDialog()
-			// 原生续听：回答完替用户重新开一次麦克风，原生 VAD 空闲约 6 秒会自己结束。
-			// 连续聊到上限就停，避免一直占着收音。
-			if n := e.nativeChain.Add(1); n < maxNativeChainTurns {
-				time.Sleep(400 * time.Millisecond) // 等 miplayer 释放音频
-				if err := e.speaker.ContinueNativeDialog(); err == nil {
-					log.Printf("🎤 原生续听已开启（连续第 %d 轮，最多 %d 轮）", n+1, maxNativeChainTurns)
-					return
-				} else {
-					log.Printf("⚠️ 原生续听失败: %v", err)
-				}
-			}
-			e.nativeChain.Store(0)
-			log.Printf("🔇 原生唤醒轮次结束：不续开本地对话窗口（下次说话请再喊小爱同学）")
+			e.continueNativeAfterReply(ctx, turnID)
 			return
 		}
 		// 模型主动结束对话（MCP end_conversation）：本轮说完就回到唤醒监听，不再续窗
@@ -886,6 +981,42 @@ func (e *Engine) startMessage(text string, authorized bool) {
 			log.Printf("👂 继续对话（%s 内直接说，不用再喊）", w)
 		}
 	}()
+}
+
+// continueNativeAfterReply 只在非音乐态自动续听。
+// 原生续听会再次打开麦克风并可能暂停播放器，不能在刚恢复音乐后立即重开。
+func (e *Engine) continueNativeAfterReply(ctx context.Context, turnID uint64) {
+	if ctx.Err() != nil || e.turnSeq.Load() != turnID {
+		return
+	}
+	if e.speaker.MusicPlaying() {
+		e.nativeChain.Store(0)
+		log.Printf("🎵 音乐态不自动重开原生麦克风；下次说话请再喊小爱同学")
+		return
+	}
+	if n := e.nativeChain.Add(1); n < maxNativeChainTurns {
+		time.Sleep(400 * time.Millisecond)
+		if ctx.Err() != nil || e.turnSeq.Load() != turnID {
+			return
+		}
+		if e.speaker.MusicPlaying() {
+			e.nativeChain.Store(0)
+			log.Printf("🎵 音乐已开始播放，取消自动原生续听")
+			return
+		}
+		seq := e.speaker.BeginNativeASRWindow()
+		if err := e.speaker.ContinueNativeDialog(); err == nil {
+			log.Printf("🎤 原生续听已开启（连续第 %d 轮，最多 %d 轮）", n+1, maxNativeChainTurns)
+			// 原生 VAD 通常约 6 秒结束；空 final/Finish 正常关窗，超时负责兜底。
+			time.AfterFunc(8*time.Second, func() { e.speaker.EndNativeASRWindowFor(seq) })
+			return
+		} else {
+			e.speaker.EndNativeASRWindowFor(seq)
+			log.Printf("⚠️ 原生续听失败: %v", err)
+		}
+	}
+	e.nativeChain.Store(0)
+	log.Printf("🔇 原生唤醒轮次结束：不续开本地对话窗口（下次说话请再喊小爱同学）")
 }
 
 func (e *Engine) handleMessage(ctx context.Context, text string, authorized bool) {
