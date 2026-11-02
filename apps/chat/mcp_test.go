@@ -55,6 +55,33 @@ func TestMCPInitializeAndTools(t *testing.T) {
 	}
 }
 
+func TestVolumeToolsDistinguishMusicAndTTS(t *testing.T) {
+	byName := map[string]mcpTool{}
+	for _, tool := range mcpToolList() {
+		byName[tool.Name] = tool
+	}
+	music, ok := byName["set_volume"]
+	if !ok {
+		t.Fatal("缺少 set_volume")
+	}
+	tts, ok := byName["set_tts_volume"]
+	if !ok {
+		t.Fatal("缺少 set_tts_volume")
+	}
+	// 泛说“声音”默认音乐，必须指向另一个工具。
+	for _, want := range []string{"音乐", "默认", "set_tts_volume"} {
+		if !strings.Contains(music.Description, want) {
+			t.Errorf("set_volume 描述缺少 %q: %s", want, music.Description)
+		}
+	}
+	// “说话声/豆包声音”才是 TTS，并且要指回音乐工具。
+	for _, want := range []string{"说话声", "豆包", "set_volume", "音乐"} {
+		if !strings.Contains(tts.Description, want) {
+			t.Errorf("set_tts_volume 描述缺少 %q: %s", want, tts.Description)
+		}
+	}
+}
+
 func TestMCPNotificationsAccepted(t *testing.T) {
 	a := &adminServer{}
 	code, _ := mcpPost(t, a, `{"jsonrpc":"2.0","method":"notifications/initialized"}`)

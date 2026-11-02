@@ -228,6 +228,11 @@ cmd_start() {
     # 放在取锁之后：已经有一个实例在跑时不要白重启一次 pns。
     # 参考通道没开时 AEC 等于不工作，但失败不该拦住 client 启动（还有 ducking 兜底）。
     prepare_aec_reference || echo "⚠️ AEC 参考通道准备失败，继续启动" >&2
+    # 原生指令隔离在 client 连接前重建覆盖；已加载时幂等，失败回退而不拦启动。
+    if [ -x "$WORK_DIR/native-guard.sh" ]; then
+        "$WORK_DIR/native-guard.sh" boot >>"$LOG" 2>&1 ||
+            echo "⚠️ 原生指令隔离自动加载失败，继续兼容启动" >>"$LOG"
+    fi
     echo "🔥 启动 client: $ARGS (日志: $LOG)"
     supervise
 }

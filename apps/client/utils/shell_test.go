@@ -37,7 +37,7 @@ func TestStopTTSDoesNotStopNativePlaybackWithoutManagedTTS(t *testing.T) {
 	}
 }
 
-func TestStopTTSStopsNativePlaybackForManagedTTS(t *testing.T) {
+func TestStopTTSCancelsManagedTTSWithoutStoppingMediaPlayer(t *testing.T) {
 	resetTTSRunnerForTest(t)
 	t.Cleanup(func() {
 		resetTTSRunnerForTest(t)
@@ -71,16 +71,16 @@ func TestStopTTSStopsNativePlaybackForManagedTTS(t *testing.T) {
 		t.Fatal("expected managed TTS context to be cancelled")
 	}
 	if len(scripts) != 1 {
-		t.Fatalf("expected one native playback stop script, got %d", len(scripts))
+		t.Fatalf("expected one cleanup script, got %d", len(scripts))
 	}
 	if got, want := strings.Join(events, ","), "end"; got != want {
 		t.Fatalf("expected TTS duck end event %q, got %q", want, got)
 	}
-	if !strings.Contains(scripts[0], "mphelper pause") {
-		t.Fatalf("expected mphelper pause in stop script, got %q", scripts[0])
+	if !strings.Contains(scripts[0], "tts_play.sh") {
+		t.Fatalf("expected tts_play.sh cleanup, got %q", scripts[0])
 	}
-	if !strings.Contains(scripts[0], "mediaplayer") {
-		t.Fatalf("expected mediaplayer stop attempt in stop script, got %q", scripts[0])
+	if strings.Contains(scripts[0], "mediaplayer") || strings.Contains(scripts[0], "mphelper pause") {
+		t.Fatalf("must not stop mediaplayer/background music, got %q", scripts[0])
 	}
 }
 

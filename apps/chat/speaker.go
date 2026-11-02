@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cxjava/open-xiaoai/apps/client/services/connect"
@@ -25,14 +28,18 @@ type playState struct {
 	speakingCool time.Time // 播完后压一小段尾巴，避免 TTS 尾音被当人声
 
 	// 音乐
-	music         bool
-	musicStart    time.Time
-	musicURL      string // 当前曲目地址，播报打断后靠它重新拉起
-	musicTracking bool
-	pendingURL    string
-	immediatePlay bool        // 路由等"没有 AI 回复"的场景：点歌要立刻起播
-	musicEnded    func() bool // 一首歌自然播完时调用：返回 true 表示已接上下一首
-	nativeASR     bool        // 原生 ASR 窗口：期间播放器会被停，不能当成歌播完
+	music           bool
+	musicStart      time.Time
+	musicURL        string // 当前曲目地址，播报打断后靠它重新拉起
+	musicTracking   bool
+	pendingURL      string
+	immediatePlay   bool        // 路由等"没有 AI 回复"的场景：点歌要立刻起播
+	musicEnded      func() bool // 一首歌自然播完时调用：返回 true 表示已接上下一首
+	musicResumePos  int         // 播报打断前的位置（ms），恢复后跳回去
+	restoring       bool        // 正在恢复音乐（重启播放器/重拉 URL），期间不判播完
+	nativeASR       bool        // 原生 ASR 窗口：期间播放器会被停，不能当成歌播完
+	nativeASRSeq    uint64      // 收音窗口编号，旧超时不能关闭新窗口
+	nativeASRDialog string      // 当前续听已观察到的 dialog，防迟到 Finish 关错窗口
 
 	// 降音量（ducking）
 	duckEnabled  bool
@@ -59,24 +66,38 @@ type Speaker struct {
 	ttsMu      sync.RWMutex
 	doubaoTTS  *DoubaoTTS
 	ttsBaseURL func() string
+	// TTS 播放配置：音量（0-100）、播放器（auto/aplay/miplayer）、
+	// WAV 输出设备（notify/playback）。都受 ttsMu 保护。
+	ttsVolume    int
+	ttsPlayer    string
+	ttsWavDevice string
 
 	// 音量读写；测试里替换成假实现，nil 时走设备 shell。
 	volumeGet func() (int, error)
 	volumeSet func(int) error
 
 	// nativeTakeover 原生唤醒接管状态（见 speaker_native_takeover.go）
-	nativeTakeover nativeTakeoverState
+	nativeTakeover             nativeTakeoverState
+	nativeInstructionIsolation atomic.Bool
+	// lateNativeTTSUntil 解冻后的兜底窗口：期间收到原生 Speak 就再清 mibrain。
+	lateNativeTTSUntil atomic.Int64
 	// 下面三个用于测试替换；nil 时走客户端 RPC
 	nativeFreeze   func() (int, error)
 	nativeUnfreeze func(int) error
 	nativeStateFn  func() (int, bool, error)
 	nativeReset    func(bool)
+	nativeStopTTS  func(string)
 }
 
 var stopTTSTimeoutMs uint64 = 1500
 
 func NewSpeaker() *Speaker {
-	s := &Speaker{Status: "idle"}
+	s := &Speaker{
+		Status:       "idle",
+		ttsVolume:    defaultTTSVolume,
+		ttsPlayer:    defaultTTSPlayer,
+		ttsWavDevice: defaultTTSWavDevice,
+	}
 	s.st.duckEnabled = true
 	s.st.duckTarget = defaultMusicDuckVolume
 	s.st.duckOriginal = -1
@@ -92,6 +113,128 @@ func (s *Speaker) SetDoubaoTTS(tts *DoubaoTTS, baseURL func() string) {
 	defer s.ttsMu.Unlock()
 	s.doubaoTTS = tts
 	s.ttsBaseURL = baseURL
+}
+
+// SetTTSPlayback 应用 TTS 播放配置；只存内存，不立即下发设备命令。
+// 真正的 notifyvol 在每次 WAV 播放前写入，避免服务启动时客户端还没连上。
+func (s *Speaker) SetTTSPlayback(player string, volume int, wavDevice string) {
+	if player == "" {
+		player = defaultTTSPlayer
+	}
+	if wavDevice == "" {
+		wavDevice = defaultTTSWavDevice
+	}
+	if volume < 0 {
+		volume = 0
+	}
+	if volume > 100 {
+		volume = 100
+	}
+	s.ttsMu.Lock()
+	s.ttsPlayer = player
+	s.ttsVolume = volume
+	s.ttsWavDevice = wavDevice
+	s.ttsMu.Unlock()
+}
+
+// TTSVolume 返回当前豆包 TTS 音量（0-100）。
+func (s *Speaker) TTSVolume() int {
+	s.ttsMu.RLock()
+	defer s.ttsMu.RUnlock()
+	return s.ttsVolume
+}
+
+// SetTTSVolume 设置豆包 TTS 音量并立即写入 notifyvol；不影响 mysoftvol/音乐。
+func (s *Speaker) SetTTSVolume(percent int) error {
+	if percent < 0 {
+		percent = 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	s.ttsMu.Lock()
+	s.ttsVolume = percent
+	raw := ttsVolumeRaw(percent)
+	s.ttsMu.Unlock()
+
+	saveTTSVolumeRecord(ttsVolumeRecord{Volume: percent})
+	script := fmt.Sprintf("amixer -c 0 sset notifyvol %d >/dev/null 2>&1", raw)
+	if _, err := s.runShell(script, 3000); err != nil {
+		return fmt.Errorf("设置 notifyvol 失败: %w", err)
+	}
+	log.Printf("🔊 豆包 TTS 音量 %d%% → notifyvol=%d（mysoftvol 不动）", percent, raw)
+	return nil
+}
+
+func ttsVolumeRaw(percent int) int {
+	if percent < 0 {
+		percent = 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	return percent * 255 / 100
+}
+
+// ttsPlaybackSettings 解析播放器与输出设备。
+// auto 按 URL 后缀选；显式配置与格式不一致时回退并在日志里说明。
+func (s *Speaker) ttsPlaybackSettings(url string) (player, device string, rawVolume int) {
+	s.ttsMu.RLock()
+	player = s.ttsPlayer
+	device = s.ttsWavDevice
+	rawVolume = ttsVolumeRaw(s.ttsVolume)
+	s.ttsMu.RUnlock()
+
+	if player == "" {
+		player = defaultTTSPlayer
+	}
+	if device == "" {
+		device = defaultTTSWavDevice
+	}
+	isWav := strings.HasSuffix(strings.ToLower(strings.SplitN(url, "?", 2)[0]), ".wav")
+
+	switch player {
+	case "auto":
+		if isWav {
+			player = "aplay"
+		} else {
+			player = "miplayer"
+		}
+	case "aplay":
+		if !isWav {
+			log.Printf("⚠️ tts.player=aplay 但音频不是 wav，回退 miplayer: %s", url)
+			player = "miplayer"
+		}
+	case "miplayer":
+		if isWav {
+			log.Printf("⚠️ tts.player=miplayer 但音频是 wav，回退 aplay: %s", url)
+			player = "aplay"
+		}
+	default:
+		log.Printf("⚠️ 未知 tts.player=%q，按音频格式自动选择", player)
+		if isWav {
+			player = "aplay"
+		} else {
+			player = "miplayer"
+		}
+	}
+
+	if device != "playback" {
+		device = "notify"
+	}
+	return player, device, rawVolume
+}
+
+// LoadTTSVolumeFile 读取上次通过 MCP/语音设置的 TTS 音量；没有记录时保留配置值。
+func (s *Speaker) LoadTTSVolumeFile() {
+	rec, ok := loadTTSVolumeRecord()
+	if !ok {
+		return
+	}
+	s.ttsMu.Lock()
+	s.ttsVolume = rec.Volume
+	s.ttsMu.Unlock()
+	log.Printf("🔊 恢复豆包 TTS 音量 %d%%（tts-volume.json）", rec.Volume)
 }
 
 func (s *Speaker) AbortXiaoAI() error {
@@ -122,21 +265,47 @@ func (s *Speaker) markSpeaking(on bool) {
 
 	// 播报会抢占音频设备，musicplayer 被顶成暂停；说完把音乐接回去。
 	// 只在"播报前就在放音乐"时做，避免把用户已经停掉的歌重新放出来。
-	if !on {
-		if s.TakeoverActive() {
-			// 接管期间播放器是被冻住的，解冻后会从原位置继续，不需要 resume/重拉。
-			// 不放歌时也要走这里，否则冻结会一直挂到超时才解。
-			go s.EndNativeTakeover("回答结束")
-		} else if musicOn {
-			go s.resumeMusicAfterSpeech()
-		}
+	if !on && !s.TakeoverActive() && musicOn {
+		// 接管期间由整轮回复结束统一解冻/恢复音乐（见 Engine.startMessage），
+		// 这里是逐句 markSpeaking，单句结束不能动接管。
+		go s.resumeMusicAfterSpeech()
 	}
 }
 
 // resumeMusicAfterSpeech 播报结束后恢复音乐播放。
 // miplayer 播完会把 mediaplayer 顶成空闲（不是暂停），所以先试 resume，
 // 设备真的空了就把当前曲目重新拉开（从头发，设备不报位置，拿不到断点）。
+// RememberMusicPosition 记下当前播放位置，供播报结束后跳回。
+// 播报会抢占音频设备，mediaplayer 一停位置就丢了。
+func (s *Speaker) RememberMusicPosition() {
+	if !s.MusicPlaying() {
+		return
+	}
+	pos := s.PlayPositionMs()
+	if pos <= 0 {
+		// 设备对 URL 流常常不报位置：退化成"从起播到现在过了多久"
+		pos = int(s.MusicPositionMs())
+	}
+	if pos <= 0 {
+		return
+	}
+	s.stMu.Lock()
+	s.st.musicResumePos = pos
+	s.stMu.Unlock()
+	log.Printf("🎵 记住播放位置 %dms（播报后跳回）", pos)
+}
+
+func (s *Speaker) takeMusicResumePos() int {
+	s.stMu.Lock()
+	pos := s.st.musicResumePos
+	s.st.musicResumePos = 0
+	s.stMu.Unlock()
+	return pos
+}
+
 func (s *Speaker) resumeMusicAfterSpeech() {
+	s.setRestoring(true)
+	defer s.setRestoring(false)
 	time.Sleep(400 * time.Millisecond) // 等 miplayer 释放音频设备
 
 	s.stMu.Lock()
@@ -146,6 +315,19 @@ func (s *Speaker) resumeMusicAfterSpeech() {
 		return
 	}
 
+	// notify 与音乐共存时无须恢复，避免对仍在播放的会话重复发 play。
+	if res, err := s.runShell("ubus -t 2 call mediaplayer player_get_play_status", 3000); err == nil && res != nil && mediaPlayerStatus(res.Stdout) == 1 {
+		return
+	}
+	// mphelper play 是厂商自己的"继续"，会话若还在会从原位置接着放
+	if _, err := s.runShell(`mphelper play`, 3000); err == nil {
+		if res, err := s.runShell("ubus -t 2 call mediaplayer player_get_play_status", 3000); err == nil && res != nil {
+			if mediaPlayerStatus(res.Stdout) == 1 {
+				log.Printf("🎵 播报结束，音乐从原位置继续")
+				return
+			}
+		}
+	}
 	if res, err := s.runShell("ubus -t 2 call mediaplayer player_get_play_status", 3000); err == nil && res != nil {
 		switch mediaPlayerStatus(res.Stdout) {
 		case 1:
@@ -166,6 +348,91 @@ func (s *Speaker) resumeMusicAfterSpeech() {
 	s.st.musicStart = time.Now()
 	s.stMu.Unlock()
 	log.Printf("🎵 播报结束，重新拉起当前曲目")
+
+	s.seekToMusicResumePos()
+}
+
+func (s *Speaker) isRestoring() bool {
+	s.stMu.Lock()
+	defer s.stMu.Unlock()
+	return s.st.restoring
+}
+
+func (s *Speaker) setRestoring(on bool) {
+	s.stMu.Lock()
+	s.st.restoring = on
+	if !on {
+		// 恢复结束时重置起播时间，给自动续播一个完整的宽限期
+		s.st.musicStart = time.Now()
+	}
+	s.stMu.Unlock()
+}
+
+// restartNativePlayer 重启 mediaplayer：它偶尔会丢掉声卡句柄但继续报"播放中"，
+// 表现为状态 1、/dev/snd 句柄 0 个、完全没有声音。重启是唯一可靠的恢复方式。
+func (s *Speaker) restartNativePlayer() {
+	oldPID, _, err := s.nativePlayerState()
+	if err != nil {
+		return
+	}
+	_, _ = s.runShell(`kill -9 $(pidof mediaplayer) 2>/dev/null; true`, 3000)
+	for i := 0; i < 20; i++ {
+		time.Sleep(200 * time.Millisecond)
+		pid, _, err := s.nativePlayerState()
+		if err == nil && pid > 0 && pid != oldPID {
+			log.Printf("♻️ 播放器已重启（%d → %d）", oldPID, pid)
+			return
+		}
+	}
+	log.Printf("⚠️ 播放器重启超时（旧 pid=%d）", oldPID)
+}
+
+// seekToMusicResumePos 把播放器跳到播报前记住的位置（设备按 URL 拉流，位置只能自己记）。
+func (s *Speaker) seekToMusicResumePos() {
+	pos := s.takeMusicResumePos()
+	if pos <= 0 {
+		return
+	}
+	time.Sleep(1200 * time.Millisecond) // 等播放器真正开始
+	script := fmt.Sprintf(`ubus -t 2 call mediaplayer player_set_positon '{"position":%d}'`, pos)
+	if _, err := s.runShell(script, 3000); err != nil {
+		log.Printf("⚠️ 跳回播放位置失败: %v", err)
+		return
+	}
+	// 回读一次，确认设备真的跳过去了（ubus 调用失败不一定会让 shell 返回非 0）
+	time.Sleep(500 * time.Millisecond)
+	if now := s.PlayPositionMs(); now > 0 {
+		log.Printf("🎵 已跳回播放位置 %dms（设备回报 %dms）", pos, now)
+		s.stMu.Lock()
+		s.st.musicStart = time.Now().Add(-time.Duration(now) * time.Millisecond)
+		s.stMu.Unlock()
+	} else {
+		// 设备不报位置：用我们发的目标值校准 elapsed
+		s.stMu.Lock()
+		s.st.musicStart = time.Now().Add(-time.Duration(pos) * time.Millisecond)
+		s.stMu.Unlock()
+		log.Printf("🎵 已发跳转 %dms（设备不回报位置，已按目标值校准）", pos)
+	}
+}
+
+// SyncMusicStateFromDevice 启动/重连时把内存里的音乐态对齐到设备真实状态。
+// 只负责"设备在放但状态丢了"这一种情况；设备没在放就不动，避免凭空造出一个音乐态。
+func (s *Speaker) SyncMusicStateFromDevice() {
+	if s.MusicPlaying() {
+		return
+	}
+	res, err := s.runShell("ubus -t 2 call mediaplayer player_get_play_status", 3000)
+	if err != nil || res == nil {
+		return
+	}
+	if mediaPlayerStatus(res.Stdout) != 1 {
+		return
+	}
+	s.stMu.Lock()
+	s.st.music = true
+	s.st.musicStart = time.Now()
+	s.stMu.Unlock()
+	log.Printf("🎵 启动对齐：设备还在播放，恢复音乐态")
 }
 
 func (s *Speaker) StopTTS() error {
@@ -302,7 +569,13 @@ func (s *Speaker) StopThinkingSilence() {
 }
 
 func (s *Speaker) StopNativePlayback() error {
-	log.Println("⏹️ 停掉小爱原生播放")
+	// 音乐和原生 TTS 都走 mediaplayer，这里一停就是两个一起停。
+	// 打出调用方，排查"歌到底是谁停的"时不用再猜。
+	if _, file, line, ok := runtime.Caller(1); ok {
+		log.Printf("⏹️ 停掉小爱原生播放（调用方 %s:%d）", filepath.Base(file), line)
+	} else {
+		log.Println("⏹️ 停掉小爱原生播放")
+	}
 	_, err := connect.GetRPC().CallRemote("stop_native", nil, &stopTTSTimeoutMs)
 	return err
 }
@@ -396,6 +669,17 @@ func (s *Speaker) SynthesizeURL(text string) (string, error) {
 	return s.SynthesizeURLVoice(text, "")
 }
 
+// SynthesizeURLWithCache 同 SynthesizeURL，并返回本次是否命中缓存。
+func (s *Speaker) SynthesizeURLWithCache(text string) (string, bool, error) {
+	tts := s.doubaoTTSInstance()
+	if tts == nil {
+		return "", false, errors.New("doubao tts not configured")
+	}
+	cached := tts.WithVoice("", "").Cached(text)
+	url, err := s.SynthesizeURL(text)
+	return url, cached, err
+}
+
 // SynthesizeURLVoice 同 SynthesizeURL，但可指定情绪（空 = 用配置默认）。
 func (s *Speaker) SynthesizeURLVoice(text, emotion string) (string, error) {
 	tts := s.doubaoTTSInstance()
@@ -414,7 +698,7 @@ func (s *Speaker) SynthesizeURLVoice(text, emotion string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("doubao tts synthesize: %w", err)
 	}
-	log.Printf("🗣️ 豆包语音合成完成: %q (%dms)", shortenText(text, 20), time.Since(start).Milliseconds())
+	log.Printf("🗣️ 豆包 TTS 就绪: %q (%dms)", shortenText(text, 20), time.Since(start).Milliseconds())
 
 	if baseURL == nil {
 		return "", errors.New("tts base url not ready")
@@ -449,7 +733,7 @@ func (s *Speaker) playDoubaoTTSVoice(text string, blocking bool, emotion string)
 		if err != nil {
 			return fmt.Errorf("doubao tts synthesize: %w", err)
 		}
-		log.Printf("🗣️ 豆包语音合成完成: %q (%dms)", shortenText(text, 20), time.Since(start).Milliseconds())
+		log.Printf("🗣️ 豆包 TTS 就绪: %q (%dms)", shortenText(text, 20), time.Since(start).Milliseconds())
 
 		if baseURL == nil {
 			return errors.New("tts base url not ready")
@@ -491,21 +775,28 @@ func (s *Speaker) PlayURL(url string, blocking bool) error {
 		s.HideThinkingLED()
 	}
 	if blocking {
-		// TTS 走 aplay 的 dmix（.wav）时不需要暂停音乐；
-		// 只有在 mp3/miplayer 路径下才需要给播放器让位。
-		if s.MusicPlaying() && !strings.HasSuffix(url, ".wav") {
+		player, device, rawVolume := s.ttsPlaybackSettings(url)
+		// miplayer 会占用音频设备，播放前给播放器让位；
+		// WAV/aplay 走 notify 通道，和 mediaplayer 的音乐叠播。
+		if s.MusicPlaying() && player == "miplayer" {
 			_, _ = s.runShell(`mphelper pause`, 3000)
-			log.Printf("⏸️ 播报前暂停音乐（mp3 播放路径）")
+			log.Printf("⏸️ 播报前暂停音乐（miplayer 播放路径）")
 		}
 		// 播报期间屏蔽服务端唤醒的自听（没有 AEC，只能"自己说话时不听"）
 		s.markSpeaking(true)
 		defer s.markSpeaking(false)
-		// WAV 走 aplay 的 dmix 设备（Playback）：和 mediaplayer 混音，
-		// 音乐不会被打断、位置不丢。mp3 仍走 miplayer（它只认默认设备）。
+
 		var script string
-		if strings.HasSuffix(strings.ToLower(strings.SplitN(url, "?", 2)[0]), ".wav") {
-			script = fmt.Sprintf("wget -q -O - '%s' | aplay -D Playback -", url)
-		} else {
+		switch player {
+		case "aplay":
+			if device == "playback" {
+				// 旧实验通道：mysoftvol 是全局增益，会一起改变音乐。
+				script = fmt.Sprintf("wget -q -O - '%s' | aplay -D Playback -", url)
+			} else {
+				// notify 通道：notifyvol 只影响 notify PCM；mysoftvol 保持固定。
+				script = fmt.Sprintf("amixer -c 0 sset notifyvol %d >/dev/null 2>&1; wget -q -O - '%s' | aplay -D notify -", rawVolume, url)
+			}
+		default:
 			script = fmt.Sprintf("miplayer -f '%s'", url)
 		}
 		_, err := s.runShell(script, 10*60*1000)
@@ -568,11 +859,15 @@ func (s *Speaker) musicEndedHandler() func() bool {
 // BeginNativeASRWindow 标记"原生 ASR 正在开麦"。
 // 原生 dialog 会把 mediaplayer 停下来听，这段时间设备空闲并不代表歌播完了；
 // 必须暂停自动续播，否则会一首接一首地跳。
-func (s *Speaker) BeginNativeASRWindow() {
+func (s *Speaker) BeginNativeASRWindow() uint64 {
 	s.stMu.Lock()
 	s.st.nativeASR = true
+	s.st.nativeASRSeq++
+	s.st.nativeASRDialog = ""
+	seq := s.st.nativeASRSeq
 	s.stMu.Unlock()
 	log.Printf("🎙️ 原生 ASR 窗口打开，暂停自动续播")
+	return seq
 }
 
 // NativeASRWindow 当前是否处于原生 ASR 窗口。
@@ -582,15 +877,53 @@ func (s *Speaker) NativeASRWindow() bool {
 	return s.st.nativeASR
 }
 
+// ObserveNativeASRDialog 用本轮的中间识别结果绑定 dialog；只有终态时保留超时兜底，
+// 避免上一轮迟到的空 final/Finish 冒充新开的收音窗口。
+func (s *Speaker) ObserveNativeASRDialog(dialogID string) {
+	if dialogID == "" {
+		return
+	}
+	s.stMu.Lock()
+	if s.st.nativeASR && s.st.nativeASRDialog == "" {
+		s.st.nativeASRDialog = dialogID
+	}
+	s.stMu.Unlock()
+}
+
+func (s *Speaker) EndNativeASRDialog(dialogID string) {
+	s.stMu.Lock()
+	seq := s.st.nativeASRSeq
+	matched := dialogID != "" && dialogID == s.st.nativeASRDialog
+	s.stMu.Unlock()
+	if matched {
+		s.EndNativeASRWindowFor(seq)
+	}
+}
+
 // EndNativeASRWindow 关闭原生 ASR 窗口，并把被原生 dialog 停掉的当前曲目接回来。
 // 不切下一首：窗口只是"停下来听"，歌并没有播完。
 func (s *Speaker) EndNativeASRWindow() {
+	s.endNativeASRWindow(0)
+}
+
+// EndNativeASRWindowFor 只关闭指定收音窗口，避免旧超时恢复新一轮的音乐。
+func (s *Speaker) EndNativeASRWindowFor(seq uint64) {
+	if seq != 0 {
+		s.endNativeASRWindow(seq)
+	}
+}
+
+func (s *Speaker) endNativeASRWindow(seq uint64) {
 	s.stMu.Lock()
-	if !s.st.nativeASR {
+	if !s.st.nativeASR || (seq != 0 && s.st.nativeASRSeq != seq) {
 		s.stMu.Unlock()
 		return
 	}
 	s.st.nativeASR = false
+	s.stMu.Unlock()
+	s.setRestoring(true)
+	defer s.setRestoring(false)
+	s.stMu.Lock()
 	url := s.st.musicURL
 	playing := s.st.music
 	if playing {
@@ -600,35 +933,23 @@ func (s *Speaker) EndNativeASRWindow() {
 	}
 	s.stMu.Unlock()
 	if !playing || url == "" {
+		if playing && url == "" {
+			log.Printf("⚠️ 音乐态但没有 musicURL，无法恢复当前曲目")
+		}
 		return
 	}
-
+	// 播放器还在放：清掉标志即可，别再多调一次 mphelper play
 	if res, err := s.runShell("ubus -t 2 call mediaplayer player_get_play_status", 3000); err == nil && res != nil {
-		switch mediaPlayerStatus(res.Stdout) {
-		case 1:
+		if mediaPlayerStatus(res.Stdout) == 1 {
 			s.stMu.Lock()
 			s.st.musicStart = time.Now()
 			s.stMu.Unlock()
 			return
-		case 2:
-			if _, err := s.runShell(`ubus -t 3 call mediaplayer player_play_operation '{"action":"play","media":"common"}'`, 4000); err == nil {
-				s.stMu.Lock()
-				s.st.musicStart = time.Now()
-				s.stMu.Unlock()
-				log.Printf("🎵 原生识别结束，音乐继续")
-				return
-			}
 		}
 	}
-
-	if err := s.PlayURL(url, false); err != nil {
-		log.Printf("⚠️ 原生识别结束恢复音乐失败: %v", err)
-		return
-	}
-	s.stMu.Lock()
-	s.st.musicStart = time.Now()
-	s.stMu.Unlock()
-	log.Printf("🎵 原生识别结束，重新拉起当前曲目")
+	// 统一走 resumeMusicAfterSpeech：先 mphelper play 试"原位置继续"，
+	// 失败才重拉 URL。原生 dialog 主动停播放器时，位置通常还能救回来。
+	s.resumeMusicAfterSpeech()
 }
 
 // MusicPlaying 当前是否在放音乐（MCP 播放的歌）。
@@ -702,6 +1023,58 @@ type musicDuckRecord struct {
 
 // SetMusicDuckFile 设置降音量状态的落盘路径。
 func (s *Speaker) SetMusicDuckFile(path string) { musicDuckFile = path }
+
+// --- TTS 音量落盘：MCP/语音设置的音量跨重启保留 ---
+
+var ttsVolumeFile string
+
+type ttsVolumeRecord struct {
+	Volume int `json:"volume"`
+}
+
+// SetTTSVolumeFile 设置 TTS 音量的落盘路径。
+func (s *Speaker) SetTTSVolumeFile(path string) { ttsVolumeFile = path }
+
+func saveTTSVolumeRecord(rec ttsVolumeRecord) {
+	if ttsVolumeFile == "" {
+		return
+	}
+	raw, err := json.MarshalIndent(rec, "", "  ")
+	if err == nil {
+		err = os.WriteFile(ttsVolumeFile, raw, 0o644)
+	}
+	if err != nil {
+		log.Printf("⚠️ 保存 TTS 音量状态失败: %v", err)
+	}
+}
+
+func loadTTSVolumeRecord() (ttsVolumeRecord, bool) {
+	if ttsVolumeFile == "" {
+		return ttsVolumeRecord{}, false
+	}
+	raw, err := os.ReadFile(ttsVolumeFile)
+	if err != nil {
+		return ttsVolumeRecord{}, false
+	}
+	var rec ttsVolumeRecord
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		return ttsVolumeRecord{}, false
+	}
+	if rec.Volume < 0 || rec.Volume > 100 {
+		return ttsVolumeRecord{}, false
+	}
+	return rec, true
+}
+
+// ClearTTSVolumeFile 清掉运行时音量记录，让配置里的 tts.volume 重新生效。
+func ClearTTSVolumeFile() {
+	if ttsVolumeFile == "" {
+		return
+	}
+	if err := os.Remove(ttsVolumeFile); err != nil && !os.IsNotExist(err) {
+		log.Printf("⚠️ 清理 TTS 音量状态失败: %v", err)
+	}
+}
 
 func saveMusicDuckRecord(rec musicDuckRecord) {
 	if musicDuckFile == "" {
@@ -1068,6 +1441,18 @@ func (s *Speaker) StopMusic() {
 	s.RestoreMusicVolume()
 }
 
+// SetMusicURL 记录当前曲目 URL。服务重启后从 music-queue.json 补回，
+// 原生 dialog 把播放器停掉时 EndNativeASRWindow 才能用它重新拉起。
+func (s *Speaker) SetMusicURL(url string) {
+	url = strings.TrimSpace(url)
+	if url == "" {
+		return
+	}
+	s.stMu.Lock()
+	s.st.musicURL = url
+	s.stMu.Unlock()
+}
+
 // StartMusicTracking 轮询设备播放状态，设备停了就自动退出音乐态。
 // 只允许一个轮询协程：重复调用由标记兜底（每轮先看标记）。
 func (s *Speaker) StartMusicTracking() {
@@ -1097,6 +1482,8 @@ func (s *Speaker) trackMusic() {
 		s.stMu.Unlock()
 	}()
 	idle := 0
+	stoppedTicks := 0
+	lastStatus := -1
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
 	deadline := time.Now().Add(2 * time.Hour)
@@ -1120,6 +1507,11 @@ func (s *Speaker) trackMusic() {
 			idle = 0
 			continue
 		}
+		// 恢复动作（重启播放器 + 重拉 URL）期间播放器本来就是停的，不能当成播完
+		if s.isRestoring() {
+			idle = 0
+			continue
+		}
 		if !playing || time.Now().After(deadline) || startedAt.IsZero() {
 			s.stMu.Lock()
 			s.st.music = false
@@ -1137,18 +1529,43 @@ func (s *Speaker) trackMusic() {
 			continue // 连接抖动，下一轮再看
 		}
 		status := mediaPlayerStatus(res.Stdout)
+		if status != lastStatus {
+			log.Printf("🎵 [track] 播放器状态 %d→%d（speaking=%v nativeASR=%v takeover=%v）",
+				lastStatus, status, s.Speaking(), s.NativeASRWindow(), s.TakeoverActive())
+			lastStatus = status
+		}
 		if status == 1 {
+			idle = 0
+			stoppedTicks = 0
+			continue
+		}
+		// status=0 是"被外部停住"（原生 dialog 开麦/别的东西 stop），不是播完；
+		// status=3 才是自然播完。这里绝不自动切歌，否则原生一开麦音乐就被换掉。
+		if status == 0 {
+			stoppedTicks++
+			if stoppedTicks == 1 {
+				log.Printf("🎵 [track] 播放器被外部停止（status=0），按中断处理，不切歌")
+			}
+			if stoppedTicks >= 30 {
+				log.Printf("🎵 [track] 持续空闲 30s，退出音乐态")
+				s.stMu.Lock()
+				s.st.music = false
+				s.st.musicStart = time.Time{}
+				s.stMu.Unlock()
+				return
+			}
 			idle = 0
 			continue
 		}
+		stoppedTicks = 0
 		idle++
 		if idle < musicEndIdleTicks {
 			continue
 		}
-		// 设备“播完”实测是 status=3（不是 0）；0 是空闲。
-		// 两种都算自然结束，交给队列接下一首；2=暂停（物理按键）不自动切。
-		if status == 0 || status == 3 {
+		if status == 3 {
 			if next := s.musicEndedHandler(); next != nil && next() {
+				log.Printf("🎵 判定播完：status=%d idle=%d 已播 %v → 接下一首",
+					status, idle, time.Since(startedAt).Round(time.Second))
 				idle = 0
 				continue
 			}

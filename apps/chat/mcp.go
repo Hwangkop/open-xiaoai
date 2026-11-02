@@ -291,13 +291,24 @@ func mcpToolList() []mcpTool {
 		},
 		{
 			Name:        "set_volume",
-			Description: "调整音箱当前音乐的音量（相对）：up/down 各调一档，mute 静音，unmute 取消静音。只在放音乐时有意义。",
+			Description: "调整**音乐**音量。用户泛说“声音大点/小点/调小声音/静音”时默认指音乐，用这个；up/down 各调一档，mute 静音，unmute 取消静音。只在放音乐时有意义。若用户明确说“说话声/豆包声音/回复声音”，用 set_tts_volume。",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"action": map[string]any{"type": "string", "description": "up / down / mute / unmute"},
 				},
 				"required": []string{"action"},
+			},
+		},
+		{
+			Name:        "set_tts_volume",
+			Description: "调整**豆包说话声（TTS/回复语音）**的音量（0-100）。只有用户明确说“说话声/说话的声音/豆包声音/回复声音/TTS 音量”时才用；泛说“声音大点/小点”默认是音乐，用 set_volume。只影响 TTS 的 notify 通道，不改变音乐音量。",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"volume": map[string]any{"type": "integer", "description": "0-100，0 为静音"},
+				},
+				"required": []string{"volume"},
 			},
 		},
 		{
@@ -474,6 +485,20 @@ func (a *adminServer) runMCPTool(ctx context.Context, call mcpToolCall) (string,
 		default:
 			return "", fmt.Errorf("action 只能是 up/down/mute/unmute")
 		}
+
+	case "set_tts_volume":
+		raw, ok := call.Arguments["volume"].(float64)
+		if !ok {
+			return "", fmt.Errorf("volume 必须是 0-100 的数字")
+		}
+		volume := int(raw)
+		if volume < 0 || volume > 100 {
+			return "", fmt.Errorf("volume 必须在 0-100 之间")
+		}
+		if err := a.speaker.SetTTSVolume(volume); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("豆包 TTS 音量已设为 %d%%", volume), nil
 
 	case "control_device":
 		if a.haClient() == nil {

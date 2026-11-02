@@ -196,6 +196,31 @@ const SECTIONS: SectionDef[] = [
         hint: '同一句话不同情绪音频明显不同；可先在「语音测试」试听',
       },
       { path: ['tts', 'speech_rate'], label: '语速倍率', type: 'number' },
+      {
+        path: ['tts', 'volume'],
+        label: '豆包 TTS 音量',
+        type: 'number',
+        hint: '0-100，映射到 notifyvol；只影响 TTS 通道，不改变音乐音量',
+      },
+      {
+        path: ['tts', 'player'],
+        label: '播放器',
+        type: 'select',
+        options: [
+          { value: 'auto', label: '自动（wav→aplay / 其它→miplayer）' },
+          { value: 'aplay', label: 'aplay' },
+          { value: 'miplayer', label: 'miplayer' },
+        ],
+      },
+      {
+        path: ['tts', 'wav_device'],
+        label: 'WAV 输出设备',
+        type: 'select',
+        options: [
+          { value: 'notify', label: 'notify（独立 TTS 音量）' },
+          { value: 'playback', label: 'Playback（旧实验，mysoftvol 会影响音乐）' },
+        ],
+      },
     ],
   },
   {
@@ -222,7 +247,17 @@ const SECTIONS: SectionDef[] = [
         label: '「小爱同学」唤醒后交给豆包',
         type: 'bool',
         defaultBool: false,
-        hint: '仅音乐播放中生效：冻结设备原生播放（原生回答和音乐一起停），由豆包接管这一轮',
+        hint: '原生识别结果交给豆包，按隔离方式阻止小爱执行本轮回答',
+      },
+      {
+        path: ['native_wake', 'isolation_mode'],
+        label: '原生回答隔离方式',
+        type: 'select',
+        options: [
+          { value: 'freeze', label: '冻结原生助手（兼容）' },
+          { value: 'instruction', label: '按对话拦截指令（实验）' },
+        ],
+        hint: '实验方式需音箱加载指令钩子；未加载会明确回退兼容路径',
       },
       {
         path: ['native_wake', 'max_seconds'],

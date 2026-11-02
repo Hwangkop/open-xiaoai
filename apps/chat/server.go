@@ -149,6 +149,7 @@ func startServer(ctx context.Context, app *appRuntime) error {
 	mux.HandleFunc("/admin/api/debug/native-asr", admin.handleDebugNativeASR)
 	mux.HandleFunc("/admin/api/debug/route", admin.handleDebugRoute)
 	mux.HandleFunc("/admin/api/debug/lyric", admin.handleDebugLyric)
+	mux.HandleFunc("/admin/api/debug/audio-test", withAppAuth(app, admin.handleAudioTest))
 	mux.HandleFunc("/admin/api/debug/utterance", admin.handleDebugUtterance)
 	mux.HandleFunc("/admin/api/debug/doubao-chat", admin.handleDebugDoubaoChat)
 	mux.HandleFunc("/admin/api/debug/doubao-raw", admin.handleDebugDoubaoRaw)
@@ -204,7 +205,7 @@ func startServer(ctx context.Context, app *appRuntime) error {
 			http.NotFound(w, r)
 			return
 		}
-		http.ServeFile(w, r, filepath.Join(os.TempDir(), "open-xiaoai-tts", name))
+		http.ServeFile(w, r, filepath.Join(defaultTTSDir(), name))
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if !authorizeAppRequest(app, w, r) {
@@ -282,6 +283,13 @@ func restorePendingMusicDuck(app *appRuntime) {
 	go func() {
 		time.Sleep(time.Second)
 		app.speaker.RestorePendingMusicDuck()
+		// 服务重启期间设备可能还在放歌：把内存状态对齐到真实播放器，
+		// 否则后面会把"放歌中"当成"没在放"，音乐就再也接不回去。
+		app.speaker.SyncMusicStateFromDevice()
+		// 让客户端在原生 ASR 终态时本地预冻结 aivs，抢在 TTS 请求之前。
+		if cfg := app.Config(); cfg != nil {
+			app.speaker.SyncNativeGuard(cfg)
+		}
 	}()
 }
 
@@ -326,6 +334,9 @@ func initConnection(conn *websocket.Conn, r *http.Request, app *appRuntime) (rep
 			log.Printf("🎤 收到录音: %d bytes", len(stream.Bytes))
 		case "mic":
 			// 服务端唤醒模式：音箱持续推上来的麦克风 PCM（16k/mono/S16_LE）
+			if app.engine != nil && app.engine.LocalASRDisabled() {
+				return nil
+			}
 			micListener.Feed(stream.Bytes)
 		}
 		return nil

@@ -15,6 +15,19 @@ func TestInstructionLineFromEventDataSupportsNewLine(t *testing.T) {
 	}
 }
 
+func TestParseInstructionEventReadsPreFrozen(t *testing.T) {
+	line := `{"header":{"namespace":"SpeechRecognizer","name":"RecognizeResult"},"payload":{"is_final":true,"results":[{"text":"今天天气怎么样"}]}}`
+	raw := []byte(`{"NewLine":"` + escapeJSONStringForTest(line) + `","pre_frozen":true}`)
+
+	gotLine, preFrozen := parseInstructionEvent(raw)
+	if gotLine != line {
+		t.Fatalf("expected NewLine field, got %q", gotLine)
+	}
+	if !preFrozen {
+		t.Fatal("expected pre_frozen=true")
+	}
+}
+
 func escapeJSONStringForTest(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b[1 : len(b)-1])

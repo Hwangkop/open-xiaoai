@@ -12,7 +12,7 @@
 - **对话历史**：可配置的上下文长度
 - **自定义回复**：通过配置文件设置固定回复（文字/音频链接）
 - **中断机制**：新消息到来时自动取消正在进行的 AI 回复
-- **MCP 工具**：内置 21 个工具（音乐 / 播报 / 定时任务 / 家电 / 搜索），供对话后端直接调用
+- **MCP 工具**：内置 22 个工具（音乐 / 播报 / 定时任务 / 家电 / 搜索），供对话后端直接调用
 - **音乐态语音控制**：放歌时说「下一首」「停下」「大点声」不用喊唤醒词
 - **语音态路由**：带唤醒词的话先在工具路由 / 分类器 / codex 之间分流，判成动作就直接执行
 - **Web 管理页**：配置、唤醒词、路由漏斗、智能体上下文、TTS 试播
@@ -31,15 +31,15 @@ codex 的相关配置在 `codex.bin` / `codex.workspace` / `codex.codex_home`：
 
 ## MCP 工具
 
-本服务在 `/mcp` 暴露 21 个工具（只监听 127.0.0.1，给同机的 codex 用）：
+本服务在 `/mcp` 暴露 22 个工具（只监听 127.0.0.1，给同机的 codex 用）：
 
 - **音乐**：`play_music` `search_music` `play_playlist` `play_daily` `list_playlists` `next_music` `stop_music` `set_volume`
-- **播报**：`speak`
+- **播报**：`speak` `set_tts_volume`
 - **定时任务**：`create_task` `list_tasks` `update_task` `set_task_enabled` `run_task` `stop_task` `delete_task`
 - **家电**：`list_devices` `control_device`（走 Home Assistant）
 - **信息**：`web_search` `get_time` `end_conversation`
 
-对话链路里写死的分支越来越少：音乐态的"工具路由"是**一次 function calling**，模型直接从这 21 个工具里选，选完由同一套 `runMCPTool` 执行。
+对话链路里写死的分支越来越少：音乐态的"工具路由"是**一次 function calling**，模型直接从这 22 个工具里选，选完由同一套 `runMCPTool` 执行。
 
 ## 音乐态
 
@@ -104,7 +104,7 @@ Windows 上不需要额外安装任何运行时：Go 产物是静态链接的单
 ```
 
 > [!NOTE]
-> 服务监听、配置文件路径都按 Windows 习惯工作（配置里用反斜杠或正斜杠都可以）。TTS 合成音频会写入系统临时目录（`%TEMP%\open-xiaoai-tts`）。
+> 服务监听、配置文件路径都按 Windows 习惯工作（配置里用反斜杠或正斜杠都可以）。TTS 合成音频写入配置文件同目录下的 `tts/`，便于跨服务重启复用。
 
 ### 2. 编辑配置
 
@@ -269,7 +269,11 @@ music_router:
 | `custom_replies` | 固定回复规则（match + text/url） |
 | `tts.provider` | `xiaoai`（默认，音箱自带 TTS）或 `doubao`（豆包音色） |
 | `tts.speaker` | 豆包音色 ID，默认 `zh_female_taozi_conversation_v4_wvae_bigtts` |
-| `tts.format` | 音频格式：`mp3`（默认）/ `ogg_opus` / `pcm` / `wav` |
+| `tts.format` | 音频格式：`wav`（默认）/ `mp3` / `ogg_opus` / `pcm` |
+| `tts.player` / `tts.wav_device` | 默认 `auto` / `notify`；WAV 用 `aplay -D notify`，其他格式使用 miplayer |
+| `tts.volume` | 0-100，默认 60；映射 notifyvol，音乐音量独立，其他 notify 提示音可能受影响 |
+| `native_wake.takeover_enabled` | 原生 ASR 接管开关，默认关闭 |
+| `native_wake.isolation_mode` | 默认 `freeze`；`instruction` 需设备匹配钩子和在线租约，按 dialog 过滤原生动作 |
 | `tts.bit_rate` / `tts.sample_rate` | 码率与采样率，默认 32000 / 24000 |
 | `doubao2api.base_url` | 本机 doubao2api 地址，用于管理页扫码登录；留空则隐藏该面板 |
 | `doubao2api.api_key` | 与 doubao2api 的 `DOUBAO_API_KEY` 一致，未配置则留空 |
@@ -294,7 +298,10 @@ auth:
 tts:
   provider: "doubao"
   speaker: "zh_female_taozi_conversation_v4_wvae_bigtts"
-  format: "mp3"
+  format: "wav"
+  player: "auto"
+  wav_device: "notify"
+  volume: 60        # 0-100，映射到 notifyvol，不调 mysoftvol
   bit_rate: 32000
   sample_rate: 24000
   speech_rate: 1.0   # 语速，1.0 正常，>1 更快
@@ -315,9 +322,11 @@ tts:
 | `en_female_sarah_conversation_bigtts` | 英文女声 |
 | `en_male_adam_conversation_bigtts` | 英文男声 |
 
-工作方式：`apps/chat` 收到 AI 逐句回复后，先在服务端合成 MP3（结果缓存到系统临时目录的 `open-xiaoai-tts/`），再通过本服务新增的 `/tts/<文件名>` 路由把音频地址交给音箱播放，因此**音箱必须能访问到本服务的端口**（与本地音乐使用同一套连接感知 host）。
+工作方式：`apps/chat` 收到 AI 逐句回复后，先在服务端合成音频（默认 WAV，缓存到配置文件同目录下的 `tts/`），再通过本服务新增的 `/tts/<文件名>` 路由把音频地址交给音箱播放，因此**音箱必须能访问到本服务的端口**（与本地音乐使用同一套连接感知 host）。
 
 实现细节：该接入复用豆包网页端 `voicegenie` WebSocket，协议为手写 protobuf 帧（`StartTask → StartSession → BidirectionalTTS → EndTTS`），音频分片直接拼接。目前该端点不需要登录 Cookie，属于逆向实现，接口变动时可能需要重新适配。
+
+原生唤醒音乐共存的固件范围、重启后验收和开机加载步骤见 [根 README](../../README.md#接管小爱同学并保留背景音乐) 与 [原生指令隔离说明](../../tools/native-guard/README.md)。通过 MCP 调整的 TTS 音量保存在配置同目录的 `tts-volume.json`，启动时恢复；保存配置后以 `tts.volume` 为准。管理台 `/ui/#audiotest` 可对比播放通道和音量，属于调试入口。
 
 ## 定时任务播报
 

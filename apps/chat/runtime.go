@@ -207,6 +207,9 @@ func (a *appRuntime) ttsBaseURL() string {
 
 // ApplyTTS 按配置启用/关闭豆包语音合成（provider=xiaoai 时回退到音箱自带 TTS）。
 func (a *appRuntime) ApplyTTS(cfg *AppConfig) {
+	if cfg != nil {
+		a.speaker.SetTTSPlayback(cfg.TTS.Player, cfg.TTS.Volume, cfg.TTS.WavDevice)
+	}
 	if cfg != nil && cfg.TTS.UsesDoubao() {
 		a.speaker.SetDoubaoTTS(NewDoubaoTTS(cfg.TTS), a.ttsBaseURL)
 		return
@@ -302,6 +305,10 @@ func (a *appRuntime) ApplyConfig(cfg *AppConfig) (adminApplyResult, error) {
 
 	a.ApplyTTS(cfg)
 	a.ApplyMusicDuck(cfg)
+	// 配置页保存后以 tts.volume 为准，清掉 MCP/语音设置的运行时音量记录。
+	ClearTTSVolumeFile()
+	// 原生唤醒开关支持热生效：同步给客户端，决定终态识别是否本地预冻结。
+	a.speaker.SyncNativeGuard(cfg)
 
 	return adminApplyResult{
 		MusicReloaded:   cfg.Music.Enabled,

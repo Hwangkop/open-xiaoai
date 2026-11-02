@@ -134,6 +134,16 @@ func newAdminServer(app *appRuntime) *adminServer {
 	// 恢复上次的播放队列：服务重启后"下一首"才不至于报"没有正在播放的歌单"
 	a.loadMusic(filepath.Join(filepath.Dir(a.configPath), "music-queue.json"))
 
+	// music-queue.json 里还有 currentURL；补回 Speaker，原生 dialog 停掉音乐后
+	// EndNativeASRWindow 才能用它重新拉起当前曲目。
+	a.music.mu.Lock()
+	restoredMusicURL := a.music.currentURL
+	a.music.mu.Unlock()
+	if restoredMusicURL != "" {
+		a.speaker.SetMusicURL(restoredMusicURL)
+		log.Printf("🎵 已恢复当前曲目 URL，供音乐中断后重拉")
+	}
+
 	// 一首自然播完 → 自动接当前队列的下一首；队列到头才退出音乐态。
 	// 没有这个回调，设备播完一首就停，用户还得再喊一次"下一首"。
 	if app.speaker != nil {

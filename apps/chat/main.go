@@ -24,11 +24,16 @@ func main() {
 		log.Fatalf("❌ 加载配置失败: %v", err)
 	}
 
+	// TTS 缓存放到配置目录下，别放系统临时目录（重启/清理后会全部重新合成）。
+	SetTTSCacheDir(filepath.Join(filepath.Dir(resolvedConfigPath), "tts"))
 	speaker := NewSpeaker()
 	speaker.SetMusicDuckFile(filepath.Join(filepath.Dir(resolvedConfigPath), "music-duck.json"))
+	speaker.SetTTSVolumeFile(filepath.Join(filepath.Dir(resolvedConfigPath), "tts-volume.json"))
 	engine := NewEngine(cfg, speaker)
 	app := newAppRuntime(resolvedConfigPath, cfg, speaker, engine)
 	app.ApplyTTS(cfg)
+	// MCP/语音设置过音量时，以落盘值为准（配置只作为默认值）。
+	speaker.LoadTTSVolumeFile()
 	app.ApplyMusicDuck(cfg)
 
 	ctx := context.Background()
@@ -42,7 +47,8 @@ func main() {
 	log.Printf("   模型: %s", cfg.GetLLM().Model)
 	log.Printf("   关键词: %v", cfg.CallAIKeywords)
 	if cfg.TTS.UsesDoubao() {
-		log.Printf("   语音: 豆包 TTS (speaker=%s, format=%s)", cfg.TTS.Speaker, cfg.TTS.Format)
+		log.Printf("   语音: 豆包 TTS (speaker=%s, format=%s, volume=%d%%, player=%s, wav_device=%s)",
+			cfg.TTS.Speaker, cfg.TTS.Format, speaker.TTSVolume(), cfg.TTS.Player, cfg.TTS.WavDevice)
 	} else {
 		log.Printf("   语音: 音箱自带 TTS")
 	}
