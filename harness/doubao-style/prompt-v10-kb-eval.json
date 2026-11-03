@@ -1,0 +1,308 @@
+{
+  "date": "2026-11-03",
+  "source": "https://github.com/xiaolai/time-as-a-friend",
+  "revision": "ba8305dc38a1868b78acf44136d1a0d3bf5d0af2",
+  "original_files": 87,
+  "mechanism": "本地只读 MCP，search_book → read_book_section",
+  "test_mode": "实际 Windows Codex + 当前模型，隔离临时会话，关闭音箱业务 MCP，无试听",
+  "notes": [
+    "先前直接文件读取未成功，因此没有采用该接法。",
+    "首轮第三组练习解释曾添加第一周标注耗时的要求；加上区分原文与额外建议的规则，最终复核不再添加。",
+    "练琴场景两次越界参数均被拒绝，模型自行以有效参数重试后完成。",
+    "练琴回答仍有把平台期过度套用到具体孩子的倾向；查到原文不保证建议始终贴合个人。",
+    "8 组抽样只验证接通及具体行为，不能证明所有场景或长期效果。"
+  ],
+  "cases": [
+    {
+      "phase": "初次 MCP 集成",
+      "input": "请查本地《把时间当作朋友》第三章“记录开销”：第三组练习的两个星期分别怎么记录？给我讲明白就好。",
+      "output": "第三组练习分两周进行：\n\n第一周，每天晚上回忆当天做过的事，再补记下来，顺便标出每件事花了多少时间。\n\n第二周换成即时记录：刚做完一件事，就马上记下它用了多长时间，不用等到晚上。\n\n简单说，第一周练习“事后回想”，第二周练习“当场记账”。先靠回忆，再改成即时记录，也更容易看出自己时间到底花在哪儿了。",
+      "elapsed_ms": 5827,
+      "tools": [
+        {
+          "server": "knowledge",
+          "tool": "search_book",
+          "status": "completed",
+          "arguments": {
+            "query": "记录开销 第三组练习 两个星期 分别怎么记录",
+            "limit": 5
+          },
+          "durationMs": 14,
+          "reference": {},
+          "matched_sections": [
+            "Chapter3:375",
+            "Chapter3:347",
+            "Chapter3:363",
+            "Chapter3:341",
+            "Chapter3:219"
+          ]
+        },
+        {
+          "server": "knowledge",
+          "tool": "read_book_section",
+          "status": "completed",
+          "arguments": {
+            "section_id": "Chapter3:375"
+          },
+          "durationMs": 2,
+          "reference": {
+            "section_id": "Chapter3:375",
+            "source_url": "https://github.com/xiaolai/time-as-a-friend/blob/ba8305dc38a1868b78acf44136d1a0d3bf5d0af2/Chapter3.md#L375",
+            "revision": "ba8305dc38a1868b78acf44136d1a0d3bf5d0af2"
+          }
+        }
+      ]
+    },
+    {
+      "phase": "初次 MCP 集成",
+      "input": "我第一次剪视频，时间总估错。能结合这本书给我一个现在能用的办法吗？",
+      "output": "[平静]可以。书里有个关键判断：第一次做的事属于“陌生任务”，过程中会遇到不少看起来像意外、其实是必经的坎。所以别一上来就估算整条片子，先剪一个有代表性的30秒片段，把导入、粗剪、加字幕、导出各花多久记下来。\n\n这样你心里就有了小样数据，再按成片的长度大致换算，最后多留出一截缓冲。下一次剪同类视频，你的估算就会准很多。",
+      "elapsed_ms": 7232,
+      "tools": [
+        {
+          "server": "knowledge",
+          "tool": "search_book",
+          "status": "completed",
+          "arguments": {
+            "query": "任务时间估算 未知任务 试做 记录时间 计划"
+          },
+          "durationMs": 12,
+          "reference": {},
+          "matched_sections": [
+            "Chapter3:3",
+            "Chapter3:219",
+            "Chapter3:385"
+          ]
+        },
+        {
+          "server": "knowledge",
+          "tool": "read_book_section",
+          "status": "completed",
+          "arguments": {
+            "section_id": "Chapter3:3",
+            "max_chars": 4000
+          },
+          "durationMs": 1,
+          "reference": {
+            "section_id": "Chapter3:3",
+            "source_url": "https://github.com/xiaolai/time-as-a-friend/blob/ba8305dc38a1868b78acf44136d1a0d3bf5d0af2/Chapter3.md#L3",
+            "revision": "ba8305dc38a1868b78acf44136d1a0d3bf5d0af2"
+          }
+        },
+        {
+          "server": "knowledge",
+          "tool": "read_book_section",
+          "status": "completed",
+          "arguments": {
+            "max_chars": 3000,
+            "section_id": "Chapter3:219"
+          },
+          "durationMs": 3,
+          "reference": {
+            "section_id": "Chapter3:219",
+            "source_url": "https://github.com/xiaolai/time-as-a-friend/blob/ba8305dc38a1868b78acf44136d1a0d3bf5d0af2/Chapter3.md#L219",
+            "revision": "ba8305dc38a1868b78acf44136d1a0d3bf5d0af2"
+          }
+        }
+      ]
+    },
+    {
+      "phase": "初次 MCP 集成",
+      "input": "书里建议怎样处理做任务中冒出的新点子？请先核对原文，告诉我小节名。",
+      "output": "查到了，小节名是第三章“管理”里的“10. 列表”下面的“制作专门的下一阶段任务列表”。\n\n书里的建议很明确：任务没完成前，除非万不得已，不要中途改当前列表；有新点子就另开一个“下一阶段任务列表”记下来，然后马上回到当前任务。这样既不打断进度，任务做完后也攒下了一批具体的新项目。",
+      "elapsed_ms": 5378,
+      "tools": [
+        {
+          "server": "knowledge",
+          "tool": "search_book",
+          "status": "completed",
+          "arguments": {
+            "query": "做任务过程中冒出的新点子 怎么办 记录",
+            "limit": 5
+          },
+          "durationMs": 13,
+          "reference": {},
+          "matched_sections": [
+            "Chapter3:547",
+            "Chapter3:219",
+            "Chapter7:50",
+            "Chapter5:173",
+            "Chapter7:343"
+          ]
+        },
+        {
+          "server": "knowledge",
+          "tool": "read_book_section",
+          "status": "completed",
+          "arguments": {
+            "section_id": "Chapter3:547",
+            "max_chars": 4000
+          },
+          "durationMs": 2,
+          "reference": {
+            "section_id": "Chapter3:547",
+            "source_url": "https://github.com/xiaolai/time-as-a-friend/blob/ba8305dc38a1868b78acf44136d1a0d3bf5d0af2/Chapter3.md#L547",
+            "revision": "ba8305dc38a1868b78acf44136d1a0d3bf5d0af2"
+          }
+        }
+      ]
+    },
+    {
+      "phase": "初次 MCP 集成",
+      "input": "今天特别委屈，不要给我建议，也不想听道理。",
+      "output": "[温柔]好，不给建议，也不讲道理。今天受的委屈，你愿意说就说，我就在这儿听着。",
+      "elapsed_ms": 1442,
+      "tools": []
+    },
+    {
+      "phase": "最终提示词复核",
+      "input": "请查原书，第三章记录开销的第三组练习，两周分别要求做什么？不要补上书里没写的步骤。",
+      "output": "第三组练习确实分成两周：\n\n第一周，每天晚上回忆并记录当天做的事情。\n\n第二周，每天随时记录刚刚做完的事情花了多少时间。",
+      "elapsed_ms": 4063,
+      "tools": [
+        {
+          "server": "knowledge",
+          "tool": "search_book",
+          "status": "completed",
+          "arguments": {
+            "query": "第三章 记录开销 第三组练习 两周",
+            "limit": 5
+          },
+          "durationMs": 11,
+          "reference": {},
+          "matched_sections": [
+            "Chapter3:375",
+            "Chapter3:347",
+            "Chapter3:363",
+            "Chapter3:341",
+            "Chapter3:219"
+          ]
+        },
+        {
+          "server": "knowledge",
+          "tool": "read_book_section",
+          "status": "completed",
+          "arguments": {
+            "section_id": "Chapter3:375",
+            "max_chars": 2000
+          },
+          "durationMs": 2,
+          "reference": {
+            "section_id": "Chapter3:375",
+            "source_url": "https://github.com/xiaolai/time-as-a-friend/blob/ba8305dc38a1868b78acf44136d1a0d3bf5d0af2/Chapter3.md#L375",
+            "revision": "ba8305dc38a1868b78acf44136d1a0d3bf5d0af2"
+          }
+        }
+      ]
+    },
+    {
+      "phase": "最终提示词复核",
+      "input": "孩子练琴几天没看到进步，有点泄气，能结合这本书聊聊吗？",
+      "output": "[温柔]孩子练了几天没见长进就有点泄气，这种挫败感挺真实的。先别急着认定孩子没天赋，也别马上灌鸡汤。\n\n书里第四章“了解学习的进程”讲得挺明白：学习不是一分耕耘一分收获的直线，更像台阶，很长一段时间看着没动静，其实是在积累，攒够了才上一个台阶，然后又进入平台期。书里还说，人很难长时间忍受失望。很多放弃不是没毅力，而是误以为进步应该是匀速的。所以这几天“没变化”，不代表白练。\n\n[平静]可以跟孩子说：不是你不行，是进步还没冒头。然后把目标缩小到今晚能看见的一点点变化，比如只把卡住的那四个小节慢慢顺一遍，或者把总出错的地方慢练三遍。也可以问问老师，最近哪个细节其实在变好。有些变化大人听不出来，老师往往能指出来。",
+      "elapsed_ms": 11986,
+      "tools": [
+        {
+          "server": "knowledge",
+          "tool": "search_book",
+          "status": "failed",
+          "arguments": {
+            "query": "学习停滞 几天看不到进步 练习 反馈 天赋",
+            "limit": 6
+          },
+          "durationMs": 1
+        },
+        {
+          "server": "knowledge",
+          "tool": "search_book",
+          "status": "completed",
+          "arguments": {
+            "query": "学习停滞 几天看不到进步 练习 反馈 天赋",
+            "limit": 5
+          },
+          "durationMs": 12,
+          "reference": {},
+          "matched_sections": [
+            "Chapter4:241",
+            "Chapter4:229",
+            "Chapter4:3",
+            "Chapter7:572",
+            "Chapter5:3"
+          ]
+        },
+        {
+          "server": "knowledge",
+          "tool": "read_book_section",
+          "status": "failed",
+          "arguments": {
+            "section_id": "Chapter4:241",
+            "max_chars": 6000
+          },
+          "durationMs": 2
+        },
+        {
+          "server": "knowledge",
+          "tool": "read_book_section",
+          "status": "completed",
+          "arguments": {
+            "section_id": "Chapter4:241",
+            "max_chars": 4000
+          },
+          "durationMs": 1,
+          "reference": {
+            "section_id": "Chapter4:241",
+            "source_url": "https://github.com/xiaolai/time-as-a-friend/blob/ba8305dc38a1868b78acf44136d1a0d3bf5d0af2/Chapter4.md#L241",
+            "revision": "ba8305dc38a1868b78acf44136d1a0d3bf5d0af2"
+          }
+        }
+      ]
+    },
+    {
+      "phase": "最终提示词复核",
+      "input": "今天好累，不要出主意，我就想歇着。",
+      "output": "好，那就不动脑子了。你往那儿一窝，想说话我陪你说，不想说也没事。",
+      "elapsed_ms": 652,
+      "tools": []
+    },
+    {
+      "phase": "正式配置复核",
+      "input": "查原书，做任务时冒出的新点子应该记在哪个列表？请说出小节名。",
+      "output": "记在“下一阶段任务列表”里，小节名是“制作专门的下一阶段任务列表”。把新点子记下来后，先别改当前列表，回到手头正在做的任务。",
+      "elapsed_ms": 5135,
+      "tools": [
+        {
+          "server": "knowledge",
+          "tool": "search_book",
+          "status": "completed",
+          "arguments": {
+            "query": "做任务时冒出的新点子 记在哪个列表 新点子 列表",
+            "limit": 5
+          },
+          "durationMs": 14,
+          "reference": {},
+          "matched_sections": [
+            "Chapter3:547",
+            "Chapter3:551",
+            "Chapter3:517",
+            "Chapter3:615",
+            "Chapter7:343"
+          ]
+        },
+        {
+          "server": "knowledge",
+          "tool": "read_book_section",
+          "status": "completed",
+          "arguments": {
+            "section_id": "Chapter3:547",
+            "max_chars": 3000
+          },
+          "durationMs": 1,
+          "reference": {
+            "section_id": "Chapter3:547",
+            "source_url": "https://github.com/xiaolai/time-as-a-friend/blob/ba8305dc38a1868b78acf44136d1a0d3bf5d0af2/Chapter3.md#L547",
+            "revision": "ba8305dc38a1868b78acf44136d1a0d3bf5d0af2"
+          }
+        }
+      ]
+    }
+  ]
+}

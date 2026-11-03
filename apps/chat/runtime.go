@@ -81,6 +81,8 @@ func newAppRuntime(configPath string, cfg *AppConfig, speaker *Speaker, engine *
 	}
 	a.admin = newAdminServer(a)
 	if a.engine != nil {
+		a.engine.audiobooks = a.admin.audiobooks
+		a.engine.musicControl = func(ctx context.Context, action string) error { return a.admin.controlQueuedMusic(ctx, action, nil) }
 		a.engine.SetMusicControls(
 			func(ctx context.Context) (string, error) { return a.admin.nextMusic(ctx) },
 			func() { a.admin.stopPlayback() },
@@ -118,6 +120,17 @@ func cfgSchedules(cfg *AppConfig) ScheduleConfig {
 
 // StartTasks 启动定时任务扫描（HTTP 已在监听后调用）。
 func (a *appRuntime) StartTasks(ctx context.Context) {
+	if a != nil && a.admin != nil {
+		go func() {
+			<-ctx.Done()
+			a.admin.music.opMu.Lock()
+			a.admin.cancelBilibili(false, "stopped")
+			a.admin.music.opMu.Unlock()
+		}()
+	}
+	if a != nil && a.admin != nil && a.admin.audiobooks != nil {
+		a.admin.audiobooks.start(ctx)
+	}
 	if a == nil || a.taskScheduler == nil {
 		return
 	}
@@ -209,6 +222,7 @@ func (a *appRuntime) ttsBaseURL() string {
 func (a *appRuntime) ApplyTTS(cfg *AppConfig) {
 	if cfg != nil {
 		a.speaker.SetTTSPlayback(cfg.TTS.Player, cfg.TTS.Volume, cfg.TTS.WavDevice)
+		a.speaker.SetTTSMusicDuck(cfg.TTS.MusicDuck)
 	}
 	if cfg != nil && cfg.TTS.UsesDoubao() {
 		a.speaker.SetDoubaoTTS(NewDoubaoTTS(cfg.TTS), a.ttsBaseURL)
@@ -337,5 +351,24 @@ func configRequiresRestart(oldConfig, newConfig *AppConfig) bool {
 	}
 	return oldConfig.Server != newConfig.Server ||
 		oldConfig.Proxy != newConfig.Proxy ||
-		oldConfig.LLM != newConfig.LLM
+		oldConfig.LLM != newConfig.LLM ||
+		oldConfig.Chat != newConfig.Chat ||
+		oldConfig.Codex != newConfig.Codex ||
+		oldConfig.DoubaoWeb != newConfig.DoubaoWeb ||
+		oldConfig.Schedules != newConfig.Schedules ||
+		asrInfrastructureChanged(oldConfig.ASR, newConfig.ASR) ||
+		oldConfig.Bilibili != newConfig.Bilibili ||
+		oldConfig.Knowledge != newConfig.Knowledge ||
+		oldConfig.Audiobook != newConfig.Audiobook
+}
+
+func asrInfrastructureChanged(oldConfig, newConfig ASRConfig) bool {
+	return oldConfig.Enabled != newConfig.Enabled ||
+		oldConfig.Python != newConfig.Python ||
+		oldConfig.Script != newConfig.Script ||
+		oldConfig.ModelDir != newConfig.ModelDir ||
+		oldConfig.AltModelDir != newConfig.AltModelDir ||
+		oldConfig.APIKey != newConfig.APIKey ||
+		oldConfig.ResourceID != newConfig.ResourceID ||
+		oldConfig.StreamResourceID != newConfig.StreamResourceID
 }

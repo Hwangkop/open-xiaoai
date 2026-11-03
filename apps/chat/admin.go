@@ -38,6 +38,10 @@ type adminServer struct {
 	getConfig       func() *AppConfig
 	getWakeStore    func() *wakeStore
 	getNeteaseStore func() *neteaseStore
+	knowledge       *knowledgeService
+	audiobooks      *audiobookService
+	bilibili        *bilibiliService
+	mediaBaseURL    func() string
 
 	lyrics *lyricStore // 音乐态歌词过滤（L3）
 
@@ -77,7 +81,8 @@ type adminErrorResponse struct {
 }
 
 func newAdminServer(app *appRuntime) *adminServer {
-	a := &adminServer{
+	var a *adminServer
+	a = &adminServer{
 		music:      newMusicState(),
 		speaker:    app.speaker,
 		engine:     app.engine,
@@ -94,11 +99,19 @@ func newAdminServer(app *appRuntime) *adminServer {
 			return app.speaker.PlayTTSWithTimeout(text, 15000)
 		},
 		playURL: func(url string) error {
-			// 先排队：等本轮回复播完再起播，避免和确认语重叠
-			app.speaker.QueueMusic(url)
+			// 直接下发；不能被旧对话的待播清理/取消误删。
+			if err := app.speaker.PlayMusicURL(url); err != nil {
+				return err
+			}
+			a.audiobooks.relinquishLocked()
 			return nil
 		},
 		stopPlayback: func() {
+			a.music.opMu.Lock()
+			defer a.music.opMu.Unlock()
+			a.cancelBilibili(false, "stopped")
+			a.persistMusic()
+			a.audiobooks.relinquishLocked()
 			app.speaker.StopMusic()
 			_ = app.speaker.StopTTS()
 		},
@@ -126,32 +139,105 @@ func newAdminServer(app *appRuntime) *adminServer {
 		getNeteaseStore: func() *neteaseStore {
 			return app.NeteaseStore()
 		},
+		mediaBaseURL: app.ttsBaseURL,
 	}
 
 	a.codexServer = app.codexServer
 	a.taskRunner = app.taskRunner
+	if cfg := app.Config(); cfg != nil && cfg.Knowledge.Enabled {
+		knowledge, err := newKnowledgeService(app.configPath, cfg.Knowledge)
+		if err != nil {
+			log.Printf("📚 知识库管理未启用: %v", err)
+		} else {
+			a.knowledge = knowledge
+		}
+	}
+	if cfg := app.Config(); cfg != nil && cfg.Bilibili.Enabled {
+		bilibili, err := newBilibiliService(app.configPath, cfg.Bilibili)
+		if err != nil {
+			log.Printf("📺 B 站音乐未启用: %v", err)
+		} else {
+			a.bilibili = bilibili
+		}
+	}
 
 	// 恢复上次的播放队列：服务重启后"下一首"才不至于报"没有正在播放的歌单"
 	a.loadMusic(filepath.Join(filepath.Dir(a.configPath), "music-queue.json"))
+	if cfg := app.Config(); cfg != nil && cfg.Audiobook.Enabled && a.knowledge != nil {
+		books, err := newAudiobookService(app.configPath, cfg.Audiobook, a.knowledge, &a.music.opMu)
+		if err != nil {
+			log.Printf("⚠️ [听书] 初始化失败：%v", err)
+		} else {
+			a.audiobooks = books
+			books.onSelect = func() { a.cancelBilibili(true, ""); a.persistMusic() }
+			books.ttsConfig = func() TTSConfig { return app.Config().TTS }
+			books.baseURL = app.ttsBaseURL
+			books.busy = func() bool {
+				return app.speaker.Speaking() || app.speaker.TakeoverActive() || app.speaker.NativeASRWindow()
+			}
+			books.play = func(url string, duration int) error {
+				app.speaker.ClearPendingMusic()
+				if err := app.speaker.PlayMusicURL(url); err != nil {
+					return err
+				}
+				a.cancelBilibili(true, "")
+				a.persistMusic()
+				app.speaker.setMusicDuration(duration)
+				return nil
+			}
+			books.pause, books.resume, books.stop = app.speaker.PauseMusic, app.speaker.ResumeMusic, app.speaker.StopMusic
+			books.mediaURL = func() string { return app.speaker.stateSnapshot().musicURL }
+			books.mediaPlaying = app.speaker.MusicPlaying
+		}
+	}
 
 	// music-queue.json 里还有 currentURL；补回 Speaker，原生 dialog 停掉音乐后
 	// EndNativeASRWindow 才能用它重新拉起当前曲目。
 	a.music.mu.Lock()
 	restoredMusicURL := a.music.currentURL
+	restoredDuration := 0
+	if a.music.current != nil {
+		restoredDuration = a.music.current.Duration
+	}
+	if q := a.music.bilibili; q != nil {
+		restoredMusicURL = q.URL
+		restoredDuration = q.Items[q.Index].Duration * 1000
+	}
 	a.music.mu.Unlock()
 	if restoredMusicURL != "" {
 		a.speaker.SetMusicURL(restoredMusicURL)
+		a.speaker.setMusicDuration(restoredDuration)
 		log.Printf("🎵 已恢复当前曲目 URL，供音乐中断后重拉")
+	}
+	if a.audiobooks != nil && a.audiobooks.initialURL != "" {
+		a.speaker.SetMusicURL(a.audiobooks.initialURL)
 	}
 
 	// 一首自然播完 → 自动接当前队列的下一首；队列到头才退出音乐态。
 	// 没有这个回调，设备播完一首就停，用户还得再喊一次"下一首"。
 	if app.speaker != nil {
-		app.speaker.SetMusicEndedHandler(func() bool {
+		app.speaker.SetMusicEndedHandler(func(generation uint64) bool {
+			a.music.opMu.Lock()
+			defer a.music.opMu.Unlock()
+			if !app.speaker.musicGenerationActive(generation) {
+				return false
+			}
+			if handled, advanced := a.audiobooks.endedLocked(); handled {
+				return advanced
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
-			msg, err := a.nextMusic(ctx)
+			msg, err := a.nextMusicLocked(ctx)
 			if err != nil {
+				a.music.mu.Lock()
+				failed := a.music.lastError != ""
+				if q := a.music.bilibili; q != nil {
+					failed = q.Error != ""
+				}
+				a.music.mu.Unlock()
+				if failed {
+					app.speaker.setMusicError("自动切歌失败，请重试或选择其他歌曲")
+				}
 				log.Printf("🎵 队列没有下一首了: %v", err)
 				return false
 			}

@@ -19,6 +19,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -44,6 +45,8 @@ type rpcError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
+
+func (e *rpcError) Error() string { return fmt.Sprintf("JSON-RPC %d: %s", e.Code, e.Message) }
 
 type CodexAppServer struct {
 	startMu sync.Mutex // 只保护启动流程，避免和 request 用的 mu 互相等待
@@ -269,7 +272,7 @@ func (a *CodexAppServer) request(ctx context.Context, method string, params any)
 	select {
 	case msg := <-ch:
 		if msg.Error != nil {
-			return nil, fmt.Errorf("%s: %s", method, msg.Error.Message)
+			return nil, fmt.Errorf("%s: %w", method, msg.Error)
 		}
 		return msg.Result, nil
 	case <-ctx.Done():
@@ -346,8 +349,25 @@ func (a *CodexAppServer) TurnOn(ctx context.Context, threadID, text string, onDe
 	return a.TurnOnOpts(ctx, threadID, text, onDelta, nil)
 }
 
+// TurnWithProgress 在默认会话上跑一轮，流式转发进度正文、最终回复及消息边界。
+func (a *CodexAppServer) TurnWithProgress(ctx context.Context, text string, onText func(agentTextEvent)) (string, error) {
+	threadID, err := a.ensureThread(ctx)
+	if err != nil {
+		return "", err
+	}
+	return a.turnWithEventsOnOpts(ctx, threadID, text, onText, nil)
+}
+
 // TurnOnOpts 同 TurnOn，可附加每轮参数（model / effort / summary 等）。
 func (a *CodexAppServer) TurnOnOpts(ctx context.Context, threadID, text string, onDelta func(string), opts map[string]any) (string, error) {
+	return a.turnWithEventsOnOpts(ctx, threadID, text, func(event agentTextEvent) {
+		if !event.Progress && !event.Done && onDelta != nil {
+			onDelta(event.Text)
+		}
+	}, opts)
+}
+
+func (a *CodexAppServer) turnWithEventsOnOpts(ctx context.Context, threadID, text string, onText func(agentTextEvent), opts map[string]any) (string, error) {
 	if err := a.Start(ctx); err != nil {
 		return "", err
 	}
@@ -366,11 +386,34 @@ func (a *CodexAppServer) TurnOnOpts(ctx context.Context, threadID, text string, 
 	}
 	defer lock.Unlock()
 
-	return a.turnOnce(ctx, threadID, text, onDelta, opts)
+	q := voiceInputsFromContext(ctx)
+	if q != nil {
+		defer q.close()
+	}
+	input := voiceInput{Text: text, Revision: 1}
+	for {
+		reply, carry, err := a.turnOnce(ctx, threadID, input, onText, opts)
+		if err != nil || q == nil {
+			return reply, err
+		}
+		if carry != nil {
+			input = *carry
+		} else {
+			var ok bool
+			input, ok = q.nextOrSeal()
+			if !ok {
+				return reply, nil
+			}
+		}
+		log.Printf("💬 [语音补充] 上轮已结束，按顺序开启下一轮（修订 %d）", input.Revision)
+		if onText != nil {
+			onText(agentTextEvent{Reset: true, Revision: input.Revision})
+		}
+	}
 }
 
 // turnOnce 跑一轮（不含重试和会话锁）。
-func (a *CodexAppServer) turnOnce(ctx context.Context, threadID, text string, onDelta func(string), opts map[string]any) (string, error) {
+func (a *CodexAppServer) turnOnce(ctx context.Context, threadID string, input voiceInput, onText func(agentTextEvent), opts map[string]any) (reply string, carry *voiceInput, turnErr error) {
 	ch := make(chan rpcMessage, 256)
 	a.notifMu.Lock()
 	a.subs[threadID] = ch
@@ -386,20 +429,32 @@ func (a *CodexAppServer) turnOnce(ctx context.Context, threadID, text string, on
 	start := time.Now()
 	turnParams := map[string]any{
 		"threadId": threadID,
-		"input":    []any{map[string]any{"type": "text", "text": text}},
+		"input":    []any{map[string]any{"type": "text", "text": input.Text}},
 	}
 	for k, v := range opts {
 		turnParams[k] = v
 	}
 	res, err := a.request(ctx, "turn/start", turnParams)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	turnID := extractTurnID(res)
 
+	q := voiceInputsFromContext(ctx)
+	var inputWake <-chan struct{}
+	if q != nil {
+		inputWake = q.wake
+		q.notifyPending()
+	}
+	revision := input.Revision
+	var awaiting *voiceInput
+	var nextTurn *voiceInput
 	var sb []byte
+	messageEvents := codexMessageEvents{}
+	staleItems := make(map[string]bool)
 	firstMs := int64(0)
-	deadline := time.After(time.Duration(a.cfg.Timeout) * time.Second)
+	deadline := time.NewTimer(time.Duration(a.cfg.Timeout) * time.Second)
+	defer deadline.Stop()
 	// 首字看门狗：模型卡住时别让用户干等满 60s，早断早重试
 	firstTokenTimer := time.NewTimer(a.firstTokenTimeout())
 	defer firstTokenTimer.Stop()
@@ -409,14 +464,14 @@ func (a *CodexAppServer) turnOnce(ctx context.Context, threadID, text string, on
 			// 调用方放弃了这一轮（用户又说话了 / 被打断）。必须通知 app-server 中断，
 			// 否则这个回合会继续占着 thread，下一轮排在它后面 → 越来越慢、最后超时。
 			a.interruptTurn(threadID, turnID)
-			return string(sb), ctx.Err()
+			return string(sb), nil, ctx.Err()
 		case <-firstTokenTimer.C:
 			if firstMs == 0 {
 				log.Printf("⚠️ codex 首字超时（%s），中断这一轮", a.firstTokenTimeout())
 				a.interruptTurn(threadID, turnID)
-				return string(sb), errFirstTokenTimeout
+				return string(sb), nil, errFirstTokenTimeout
 			}
-		case <-deadline:
+		case <-deadline.C:
 			// app-server 不会因为这一轮超时就把回合丢掉：卡住的那轮会继续占着
 			// thread，后面每一轮都排在它后面 → 表现为"越来越慢、接连超时"。
 			// 所以这里直接重启进程，下次 Turn 会重新握手 + 新建会话。
@@ -424,38 +479,86 @@ func (a *CodexAppServer) turnOnce(ctx context.Context, threadID, text string, on
 			a.interruptTurn(threadID, turnID)
 			a.clearThreadID() // 这条会话可能已经不对劲，下次新建，避免复制坏状态
 			a.Restart()
-			return string(sb), fmt.Errorf("turn 超时")
-		case msg := <-ch:
-			switch {
-			case msg.Method == "item/agentMessage/delta":
-				var p struct {
-					Delta string `json:"delta"`
+			return string(sb), nil, fmt.Errorf("turn 超时")
+		case <-inputWake:
+			if awaiting != nil || nextTurn != nil {
+				continue
+			}
+			supplement, ok := q.pop()
+			if !ok {
+				continue
+			}
+			// 用户的新输入开始新的等待预算，不让刚追加的内容继承旧轮剩余的几秒。
+			deadline.Reset(time.Duration(a.cfg.Timeout) * time.Second)
+			steerCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			_, steerErr := a.request(steerCtx, "turn/steer", map[string]any{
+				"threadId": threadID, "expectedTurnId": turnID,
+				"input": []any{map[string]any{"type": "text", "text": supplement.Text}},
+			})
+			cancel()
+			if steerErr != nil {
+				var rpcErr *rpcError
+				if errors.As(steerErr, &rpcErr) {
+					// 明确拒绝说明没有接收；结束旧轮后，只发送补充，保留 thread 上下文。
+					log.Printf("⚠️ [语音补充] 追加被拒绝，转下一轮（修订 %d）：%v", supplement.Revision, steerErr)
+					nextTurn = &supplement
+					a.interruptTurn(threadID, turnID)
+					continue
 				}
-				_ = json.Unmarshal(msg.Params, &p)
-				if p.Delta != "" {
-					if firstMs == 0 {
+				// 超时可能只是应答丢失，不能盲目重发导致工具双执行；等 userMessage 确认。
+				log.Printf("⚠️ [语音补充] 追加应答未确认，等待消息事件（修订 %d）：%v", supplement.Revision, steerErr)
+			} else {
+				log.Printf("💬 [语音补充] Codex 已接收追加请求（修订 %d），等待应用", supplement.Revision)
+			}
+			awaiting = &supplement
+		case msg := <-ch:
+			// 取消旧轮后，迟到的旧 turn 通知不能被当成新一轮完成。
+			if !codexNotificationForTurn(msg, turnID) {
+				continue
+			}
+			if awaiting != nil && codexUserMessageMatches(msg, awaiting.Text) {
+				for id := range messageEvents {
+					staleItems[id] = true
+				}
+				revision = awaiting.Revision
+				awaiting = nil
+				sb = nil
+				if onText != nil {
+					onText(agentTextEvent{Reset: true, Revision: revision})
+				}
+				q.notifyPending()
+				log.Printf("💬 [语音补充] 已进入模型上下文（修订 %d）", revision)
+			}
+			switch {
+			case msg.Method == "item/started" || msg.Method == "item/completed" || msg.Method == "item/agentMessage/delta":
+				if event, ok := messageEvents.consume(msg); ok && awaiting == nil && nextTurn == nil && !staleItems[codexMessageItemID(msg)] {
+					event.Revision = revision
+					if event.Text != "" && firstMs == 0 {
 						firstMs = time.Since(start).Milliseconds()
 					}
-					sb = append(sb, p.Delta...)
-					if onDelta != nil {
-						onDelta(p.Delta)
+					if !event.Progress {
+						sb = append(sb, event.Text...)
+					}
+					if onText != nil {
+						onText(event)
 					}
 				}
 			case msg.Method == "turn/completed":
 				log.Printf("🧩 codex 回复 %d 字（首字 %dms，总 %dms）", len([]rune(string(sb))), firstMs, time.Since(start).Milliseconds())
-				return string(sb), nil
-			default:
-				// 工具调用、item 事件等——说明模型还在干活，只是没吐字。
-				// 不重置的话，带工具的一轮会被"首字看门狗"误杀（实测 12s 被砍）。
-				if firstMs == 0 {
-					if !firstTokenTimer.Stop() {
-						select {
-						case <-firstTokenTimer.C:
-						default:
-						}
-					}
-					firstTokenTimer.Reset(a.firstTokenTimeout())
+				if awaiting != nil {
+					return "", nil, fmt.Errorf("语音补充未收到应用确认（修订 %d）", awaiting.Revision)
 				}
+				return string(sb), nextTurn, nil
+			}
+			// 工具和正文事件都说明模型仍在工作；保留首字超时兜底。
+			if firstMs == 0 {
+				if !firstTokenTimer.Stop() {
+					select {
+					case <-firstTokenTimer.C:
+					default:
+					}
+				}
+				firstTokenTimer.Reset(a.firstTokenTimeout())
 			}
 		}
 	}
@@ -653,7 +756,7 @@ func (a *CodexAppServer) Close() { a.kill() }
 // ---------------- 适配成 openai 流 ----------------
 
 type codexAppStream struct {
-	ch     chan openai.ChatCompletionStreamResponse
+	ch     chan agentTextEvent
 	errs   chan error
 	cancel context.CancelFunc
 	closed chan struct{}
@@ -662,20 +765,16 @@ type codexAppStream struct {
 func newCodexAppStream(parent context.Context, srv *CodexAppServer, prompt string) *codexAppStream {
 	ctx, cancel := context.WithCancel(parent)
 	s := &codexAppStream{
-		ch:     make(chan openai.ChatCompletionStreamResponse, 64),
+		ch:     make(chan agentTextEvent, 64),
 		errs:   make(chan error, 1),
 		cancel: cancel,
 		closed: make(chan struct{}),
 	}
 	go func() {
 		defer close(s.ch)
-		_, err := srv.Turn(ctx, prompt, func(delta string) {
+		_, err := srv.TurnWithProgress(ctx, prompt, func(event agentTextEvent) {
 			select {
-			case s.ch <- openai.ChatCompletionStreamResponse{
-				Choices: []openai.ChatCompletionStreamChoice{
-					{Delta: openai.ChatCompletionStreamChoiceDelta{Content: delta}},
-				},
-			}:
+			case s.ch <- event:
 			case <-ctx.Done():
 			}
 		})
@@ -686,20 +785,36 @@ func newCodexAppStream(parent context.Context, srv *CodexAppServer, prompt strin
 	return s
 }
 
+// Recv 兼容普通正文消费者；语音入口通过 RecvText 同时读取进度和正文。
 func (s *codexAppStream) Recv() (openai.ChatCompletionStreamResponse, error) {
+	for {
+		event, err := s.RecvText()
+		if err != nil {
+			return openai.ChatCompletionStreamResponse{}, err
+		}
+		if event.Progress || event.Done || event.Text == "" {
+			continue
+		}
+		return openai.ChatCompletionStreamResponse{Choices: []openai.ChatCompletionStreamChoice{
+			{Delta: openai.ChatCompletionStreamChoiceDelta{Content: event.Text}},
+		}}, nil
+	}
+}
+
+func (s *codexAppStream) RecvText() (agentTextEvent, error) {
 	select {
-	case resp, ok := <-s.ch:
+	case event, ok := <-s.ch:
 		if !ok {
 			select {
 			case err := <-s.errs:
-				return openai.ChatCompletionStreamResponse{}, err
+				return agentTextEvent{}, err
 			default:
 			}
-			return openai.ChatCompletionStreamResponse{}, io.EOF
+			return agentTextEvent{}, io.EOF
 		}
-		return resp, nil
+		return event, nil
 	case <-s.closed:
-		return openai.ChatCompletionStreamResponse{}, io.EOF
+		return agentTextEvent{}, io.EOF
 	}
 }
 

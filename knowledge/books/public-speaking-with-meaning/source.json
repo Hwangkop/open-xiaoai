@@ -1,0 +1,174 @@
+{
+  "title": "我也有话要说：普通人的当众讲话技能",
+  "author": "李笑来",
+  "edition": "公开整理版",
+  "repository": "https://github.com/xiaolai/public-speaking-with-meaning",
+  "revision": "b77a015bfa4c023c8f214bbe218a91b9bdbdb5d9",
+  "license": "",
+  "files": {
+    "README.md": {
+      "bytes": 2759,
+      "git_blob_sha1": "f2d60b00f4ab56a0004c3b79763732b47ad1da23"
+    },
+    "ch01.md": {
+      "bytes": 2561,
+      "git_blob_sha1": "57678cf8d52614f14388a1c2566fef6407480ecb"
+    },
+    "ch02.md": {
+      "bytes": 2785,
+      "git_blob_sha1": "9be9236d433d46889895cc5e353c369915d7fcd5"
+    },
+    "ch03.md": {
+      "bytes": 2614,
+      "git_blob_sha1": "58d9cae21b211d3cb7a3d2a25c7b2f8d73d75b7e"
+    },
+    "ch04.md": {
+      "bytes": 2353,
+      "git_blob_sha1": "80bb6484a09ce728219bcfb7ddb77bc628097d64"
+    },
+    "ch05.md": {
+      "bytes": 2234,
+      "git_blob_sha1": "4694c0c79e501355f8d6ba934c442bd6a140b7f6"
+    },
+    "ch06.md": {
+      "bytes": 2069,
+      "git_blob_sha1": "3aa58189e3f9a350dd0699f74202ed821e6c5608"
+    },
+    "ch07.md": {
+      "bytes": 2270,
+      "git_blob_sha1": "ca629daceaf68695c3af1f069a994535b210b7af"
+    },
+    "ch08.md": {
+      "bytes": 2772,
+      "git_blob_sha1": "d82bf6844f24021a1bfe8cc48a2d7a71929f5463"
+    },
+    "ch09.md": {
+      "bytes": 4453,
+      "git_blob_sha1": "78149f050de71f32757f67e6e7fee38c6389e8cf"
+    },
+    "ch10.md": {
+      "bytes": 3069,
+      "git_blob_sha1": "7108ba8fc61db54cedac1a8207f2101028f82eb5"
+    },
+    "ch11.md": {
+      "bytes": 3263,
+      "git_blob_sha1": "0bc3c2625e9c6b2ab19f3a0470a0017e7469691b"
+    },
+    "ch12.md": {
+      "bytes": 2401,
+      "git_blob_sha1": "637a0f9444a855ad8efd36036732325a3cf762c9"
+    },
+    "ch13.md": {
+      "bytes": 2904,
+      "git_blob_sha1": "f7583a2b260f141cfc978b429a340ec66fa2f3ee"
+    },
+    "ch14.md": {
+      "bytes": 2775,
+      "git_blob_sha1": "00c1799eb77f7f5d4d9050fad457fe1f057a1b5e"
+    },
+    "ch15.md": {
+      "bytes": 3998,
+      "git_blob_sha1": "2c082b7df902fc58cc9ed91c0131fea7102ac747"
+    },
+    "ch16.md": {
+      "bytes": 2472,
+      "git_blob_sha1": "04077aea218247ae6b3cdd3e009db54f2544da48"
+    },
+    "ch17.md": {
+      "bytes": 2403,
+      "git_blob_sha1": "b6e8ba1a3d22f550b8bdbb91db8a0e2dcd6c7d13"
+    },
+    "ch18.md": {
+      "bytes": 7498,
+      "git_blob_sha1": "7d9c2d53b24e875e6c32b1060310464a9acda634"
+    },
+    "ch19.md": {
+      "bytes": 2648,
+      "git_blob_sha1": "d50d78e788276128ae0de3bc8b2b35229e184189"
+    },
+    "ch20.md": {
+      "bytes": 3014,
+      "git_blob_sha1": "5dc938b42b6563e75e88fee48a0a2f8806bf4bf7"
+    },
+    "ch21.md": {
+      "bytes": 3026,
+      "git_blob_sha1": "f6a84ec79df4e266b27e82673512dc2d0f90ee30"
+    },
+    "ch22.md": {
+      "bytes": 2960,
+      "git_blob_sha1": "2ffceed07a8d5200a435a3f5b482ace062cc2a43"
+    },
+    "ch23.md": {
+      "bytes": 3275,
+      "git_blob_sha1": "52fdb2326ecf9bb59c05454f21d5c63a9426435f"
+    },
+    "ch24.md": {
+      "bytes": 3732,
+      "git_blob_sha1": "dc8271769540bf91f19dbc3129df9d36e3482b41"
+    },
+    "ch25.md": {
+      "bytes": 5427,
+      "git_blob_sha1": "10803500dd2368d8846db8baedf55bf735dd7478"
+    },
+    "ch26.md": {
+      "bytes": 4618,
+      "git_blob_sha1": "1a83fef36780eae5aaad4a73034216257191ff05"
+    },
+    "ch27.md": {
+      "bytes": 2358,
+      "git_blob_sha1": "ccc71dd9437eae2ad390f317aa84e0b2bfe1c227"
+    },
+    "ch28.md": {
+      "bytes": 3485,
+      "git_blob_sha1": "c3600dfa763cd6b050e38baa9cf6808b93550799"
+    },
+    "ch29.md": {
+      "bytes": 3426,
+      "git_blob_sha1": "0bb5f170e0f2211fe8dd2957d85af8965a234b22"
+    },
+    "ch30.md": {
+      "bytes": 1804,
+      "git_blob_sha1": "6b368745ed4b0747178da2fbf3aad50dacc19742"
+    },
+    "ch31.md": {
+      "bytes": 3134,
+      "git_blob_sha1": "822f6d6c3f5d87767a63f90ddfaaaa2ba63f70b9"
+    },
+    "ch32.md": {
+      "bytes": 4581,
+      "git_blob_sha1": "e1aeb8316530ff09c0248b0561b20216f449894f"
+    },
+    "ch33.md": {
+      "bytes": 2594,
+      "git_blob_sha1": "a691c291508b5e2b9d727811c56a735980a8a6fb"
+    },
+    "ch34.md": {
+      "bytes": 4544,
+      "git_blob_sha1": "4d44e5d6bfe0729d24a585a895eafd92f9085d22"
+    },
+    "ch35.md": {
+      "bytes": 2817,
+      "git_blob_sha1": "e737b208e7bbebbdc6efc847fe4687dd8e0390c4"
+    },
+    "ch36.md": {
+      "bytes": 3246,
+      "git_blob_sha1": "49c5291d4a667f475e16e1c03fcb47c5030263d2"
+    },
+    "ch37.md": {
+      "bytes": 3442,
+      "git_blob_sha1": "0cd050073161c972f31ac1ec6ce9c4257e307bec"
+    },
+    "ch38.md": {
+      "bytes": 3038,
+      "git_blob_sha1": "eaf600b3e4782aa721f7f31074f1a6266ff9f747"
+    },
+    "ch39.md": {
+      "bytes": 3687,
+      "git_blob_sha1": "7838a857c613f2d2bbc9e61f817d69fc63d924f5"
+    },
+    "ch40.md": {
+      "bytes": 2892,
+      "git_blob_sha1": "671be0c3d2d0bd89311ffa452f97588df613d88e"
+    }
+  }
+}

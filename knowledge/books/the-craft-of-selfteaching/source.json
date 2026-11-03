@@ -1,0 +1,206 @@
+{
+  "title": "自学是门手艺",
+  "author": "李笑来",
+  "edition": "Markdown 版",
+  "repository": "https://github.com/xiaolai/the-craft-of-selfteaching",
+  "revision": "987a8e8a9ce205b63886510e145437d14d8a13a4",
+  "license": "CC BY-NC-ND 3.0",
+  "files": {
+    "markdown/00.cover.md": {
+      "bytes": 5257,
+      "git_blob_sha1": "f8adc7f0bf9fa92652d5ee40f865d2ae66d64657"
+    },
+    "markdown/01.preface.md": {
+      "bytes": 13608,
+      "git_blob_sha1": "3c45e4067d4c33d3e9d65ba8d1a4a78be662c1b2"
+    },
+    "markdown/02.proof-of-work.md": {
+      "bytes": 11112,
+      "git_blob_sha1": "a9fd6bd9891456dd664623a9fe6828516840e948"
+    },
+    "markdown/Part.1.A.better.teachyourself.md": {
+      "bytes": 12171,
+      "git_blob_sha1": "05bac85d713fd814e038500810f62d42b434508f"
+    },
+    "markdown/Part.1.B.why.start.from.learning.coding.md": {
+      "bytes": 13259,
+      "git_blob_sha1": "7716e634f3d2081a0d9d5f007904f2cc84e5a3d2"
+    },
+    "markdown/Part.1.C.must.learn.sth.only.by.reading.md": {
+      "bytes": 10131,
+      "git_blob_sha1": "565f4cd147129f3c8b7d1f52a2fcc3b0121d09de"
+    },
+    "markdown/Part.1.D.preparation.for.reading.md": {
+      "bytes": 4933,
+      "git_blob_sha1": "52487d0791a0e841203a33f843ba5a14471da562"
+    },
+    "markdown/Part.1.E.1.entrance.md": {
+      "bytes": 25384,
+      "git_blob_sha1": "0221eda5893450c74df4aba49444d06bd6163675"
+    },
+    "markdown/Part.1.E.2.values-and-their-operators.md": {
+      "bytes": 23428,
+      "git_blob_sha1": "063f0ef963abd57262c530890a2320f8c6aced59"
+    },
+    "markdown/Part.1.E.3.controlflow.md": {
+      "bytes": 12938,
+      "git_blob_sha1": "0081bf5d0c0fc3c22463ca48cca6b5b10ca62d19"
+    },
+    "markdown/Part.1.E.4.functions.md": {
+      "bytes": 14097,
+      "git_blob_sha1": "7a6fcb97540f3a8618deee8f289a70632586096d"
+    },
+    "markdown/Part.1.E.5.strings.md": {
+      "bytes": 39657,
+      "git_blob_sha1": "31dd31f27d39de3b3aa1519b15d2f0d4c3d0f573"
+    },
+    "markdown/Part.1.E.6.containers.md": {
+      "bytes": 35831,
+      "git_blob_sha1": "857668c7a2f8b6077cd774efbff67ab95a2c5660"
+    },
+    "markdown/Part.1.E.7.files.md": {
+      "bytes": 12994,
+      "git_blob_sha1": "774b69036b6b92ddf1aa464719f5fa7352e443c5"
+    },
+    "markdown/Part.1.F.deal-with-forward-references.md": {
+      "bytes": 24938,
+      "git_blob_sha1": "a4a2284f9ccd417b16d38be1cc1b472cc9525648"
+    },
+    "markdown/Part.1.G.The-Python-Tutorial-local.md": {
+      "bytes": 10678,
+      "git_blob_sha1": "58b4aadacd4969b4a66645e9a38df258d3f5c474"
+    },
+    "markdown/Part.2.A.clumsy-and-patience.md": {
+      "bytes": 12016,
+      "git_blob_sha1": "0b66628a88e70e4a15c8a20025a43f6482db54eb"
+    },
+    "markdown/Part.2.B.deliberate-practicing.md": {
+      "bytes": 7513,
+      "git_blob_sha1": "89756928553e0268c2695ba0ce265b2d5934b44a"
+    },
+    "markdown/Part.2.C.why-start-from-writing-functions.md": {
+      "bytes": 6876,
+      "git_blob_sha1": "ea505873c620535b6395b157e1fd62505271ae7c"
+    },
+    "markdown/Part.2.D.1-args.md": {
+      "bytes": 9027,
+      "git_blob_sha1": "59f8b6a593a4dc45ebb96d6c99ed60e695ce9473"
+    },
+    "markdown/Part.2.D.2-aargs.md": {
+      "bytes": 8854,
+      "git_blob_sha1": "fec62fca79cb9986c167e08f8171af3f6ca8b5a2"
+    },
+    "markdown/Part.2.D.3-lambda.md": {
+      "bytes": 6734,
+      "git_blob_sha1": "18a50611267287e0fc128e8f8c1d30075312f581"
+    },
+    "markdown/Part.2.D.4-recursion.md": {
+      "bytes": 15190,
+      "git_blob_sha1": "43c3d8ab25402e40629513c31f5909e4174c4e48"
+    },
+    "markdown/Part.2.D.5-docstrings.md": {
+      "bytes": 7838,
+      "git_blob_sha1": "95f3f06f13313f116e4fe4fe8611b2e71781af69"
+    },
+    "markdown/Part.2.D.6-modules.md": {
+      "bytes": 11686,
+      "git_blob_sha1": "145327faab8771c4314be882e9c41f9f2ea5fc65"
+    },
+    "markdown/Part.2.D.7-tdd.md": {
+      "bytes": 12973,
+      "git_blob_sha1": "96be73d4b09618d297a3913ab6bc118f9bf98a80"
+    },
+    "markdown/Part.2.D.8-main.md": {
+      "bytes": 7875,
+      "git_blob_sha1": "7d78497f46935d98a2769f2840137eb5b0e6bdb8"
+    },
+    "markdown/Part.2.E.deliberate-thinking.md": {
+      "bytes": 6513,
+      "git_blob_sha1": "78001908ffed2c05559087d5b07672d73bdec774"
+    },
+    "markdown/Part.3.A.conquering-difficulties.md": {
+      "bytes": 6756,
+      "git_blob_sha1": "f92ea1a93f92490da1d3fcd24a50e490ca99abe2"
+    },
+    "markdown/Part.3.B.1.classes-1.md": {
+      "bytes": 8613,
+      "git_blob_sha1": "e54b5b7c9b626dbb7201aa4684893ddd9d407051"
+    },
+    "markdown/Part.3.B.2.classes-2.md": {
+      "bytes": 20232,
+      "git_blob_sha1": "496a9780bdf4636b129c53fc5cd38d0a74c9f3e9"
+    },
+    "markdown/Part.3.B.3.decorator-iterator-generator.md": {
+      "bytes": 15313,
+      "git_blob_sha1": "6fae6ecaf59f1dfc45d669432b7b6454376817e6"
+    },
+    "markdown/Part.3.B.4.regex.md": {
+      "bytes": 46110,
+      "git_blob_sha1": "501194cadfdaaf00f30a157269dd232ab1e122de"
+    },
+    "markdown/Part.3.B.5.bnf-ebnf-pebnf.md": {
+      "bytes": 17551,
+      "git_blob_sha1": "4f1d557f90ec37ef0b9aed01fe1ee8dedbfa633d"
+    },
+    "markdown/Part.3.C.breaking-good-and-bad.md": {
+      "bytes": 13764,
+      "git_blob_sha1": "5bb21db67c3f8b77ec06c842c039eae3a199a429"
+    },
+    "markdown/Part.3.D.indispensable-illusion.md": {
+      "bytes": 15201,
+      "git_blob_sha1": "c862154faeb2abbcca5df1849f1ee7ea103f3274"
+    },
+    "markdown/Part.3.E.to-be-thorough.md": {
+      "bytes": 15425,
+      "git_blob_sha1": "713668377d5555df547bde2078f0a996b4670d87"
+    },
+    "markdown/Part.3.F.social-selfteaching.md": {
+      "bytes": 13766,
+      "git_blob_sha1": "ebf4dbce55689a2eb8c10180ae4e84c6b41358aa"
+    },
+    "markdown/Part.3.G.the-golden-age-and-google.md": {
+      "bytes": 7112,
+      "git_blob_sha1": "3fa1ad8bf6a1a8bfc6d1d5889a9b4c84f16f0683"
+    },
+    "markdown/Part.3.H.prevent-focus-drifting.md": {
+      "bytes": 7107,
+      "git_blob_sha1": "3694096555972d0711a0bc566c9cd99d2e72d3fe"
+    },
+    "markdown/Q.good-communiation.md": {
+      "bytes": 19021,
+      "git_blob_sha1": "92ce05a5155bf651dcbbcb2cf6d887c35518f1f8"
+    },
+    "markdown/R.finale.md": {
+      "bytes": 13560,
+      "git_blob_sha1": "68ae4892a1a676c270405a2f19becb9e27ee52aa"
+    },
+    "markdown/README.md": {
+      "bytes": 7967,
+      "git_blob_sha1": "5d369b2333a58ceacdabb9634bf3f4d48c8868b0"
+    },
+    "markdown/S.whats-next.md": {
+      "bytes": 4793,
+      "git_blob_sha1": "56401cf4badf29a3df20c2f0e2cce411176536a8"
+    },
+    "markdown/T-appendix.editor.vscode.md": {
+      "bytes": 3974,
+      "git_blob_sha1": "4e7c18c4568028165972c3e40a0c286d3ee5aad6"
+    },
+    "markdown/T-appendix.git-introduction.md": {
+      "bytes": 8616,
+      "git_blob_sha1": "cd5ad11f939611ac9cae6d94bb6bf8346aed2cce"
+    },
+    "markdown/T-appendix.jupyter-installation-and-setup.md": {
+      "bytes": 17915,
+      "git_blob_sha1": "13fed9b5b9a7d9924a41383588769950b2f7ef95"
+    },
+    "markdown/T-appendix.symbols.md": {
+      "bytes": 2281,
+      "git_blob_sha1": "9e22513856757498d8d1abdfdcf8ff22af923020"
+    },
+    "markdown/TOC.md": {
+      "bytes": 3079,
+      "git_blob_sha1": "65487332715604aa17208ea77d57f3921b494bd9"
+    }
+  }
+}

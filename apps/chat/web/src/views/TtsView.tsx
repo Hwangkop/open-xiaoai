@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2, Send, Volume2 } from 'lucide-react'
+import { AudioLines, Loader2, Send, Volume2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { AudioTestView } from '@/views/AudioTestView'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -20,7 +21,7 @@ interface SentItem {
 }
 
 type Mode = 'tts' | 'chat'
-
+type Panel = 'speech' | 'channels'
 
 let seq = 0
 
@@ -33,6 +34,7 @@ export function TtsView({ onNotify, onError }: Props) {
   const [emotion, setEmotion] = useState('')  // 空 = 默认情绪
   const [voices, setVoices] = useState<{ id: string; label: string }[]>([])
   const [emotions, setEmotions] = useState<{ id: string; label: string }[]>([])
+  const [panel, setPanel] = useState<Panel>('speech')
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
@@ -76,7 +78,41 @@ export function TtsView({ onNotify, onError }: Props) {
   }, [emotion, mode, onError, onNotify, text, voice])
 
   return (
-    <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-ui-lg font-semibold">语音与音频</div>
+          <div className="text-ui-sm text-muted-foreground">文字试听、AI 对话和播放通道检查</div>
+        </div>
+        <div className="flex gap-0.5 rounded-md bg-muted p-0.5 text-ui-sm">
+          <button
+            type="button"
+            onClick={() => setPanel('speech')}
+            className={cn(
+              'flex h-7 items-center gap-1.5 rounded-sm px-2.5 transition-colors',
+              panel === 'speech' ? 'bg-card font-medium shadow-sm' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <Volume2 className="size-3.5" /> 文字试听
+          </button>
+          <button
+            type="button"
+            onClick={() => setPanel('channels')}
+            className={cn(
+              'flex h-7 items-center gap-1.5 rounded-sm px-2.5 transition-colors',
+              panel === 'channels' ? 'bg-card font-medium shadow-sm' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <AudioLines className="size-3.5" /> 通道测试
+          </button>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1">
+        {panel === 'channels' ? (
+          <AudioTestView onNotify={onNotify} onError={onError} />
+        ) : (
+          <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
       <Card size="sm" className="h-fit self-start">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-ui-sm">
@@ -207,6 +243,9 @@ export function TtsView({ onNotify, onError }: Props) {
           )}
         </CardContent>
       </Card>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

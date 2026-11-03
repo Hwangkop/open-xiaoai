@@ -193,9 +193,9 @@ export function AudioTestView({ onNotify, onError }: Props) {
         </Button>
       </div>
 
-      <div className="grid items-start gap-3 lg:grid-cols-2">
-      <Card size="sm">
-        <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3">
+      <div className="grid gap-3 lg:grid-cols-2">
+      <Card size="sm" className="h-full">
+        <CardContent className="flex h-full flex-wrap items-center justify-between gap-3 py-3">
           <div className="min-w-0">
             <div className="text-ui-sm font-medium">本地 ASR</div>
             <div className="text-ui-xs text-muted-foreground">

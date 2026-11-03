@@ -210,7 +210,7 @@ func (a *adminServer) applyAudioTestVolume(playID string, volume int) error {
 	case "mysoftvol":
 		script = fmt.Sprintf("amixer -c 0 sset mysoftvol %d >/dev/null 2>&1", volume)
 	case "mediaplayer":
-		script = fmt.Sprintf(`ubus -t 2 call mediaplayer player_set_volume '{"volume":%d,"beep":0}'`, volume)
+		return a.speaker.SetMusicVolume(volume)
 	default:
 		return fmt.Errorf("通道 %s 没有音量控制", playID)
 	}
@@ -264,6 +264,10 @@ func (a *adminServer) writeAudioTestState(w http.ResponseWriter) {
 	if a.music.current != nil {
 		name = a.music.current.Name
 		artists = a.music.current.Artists
+	}
+	if q := a.music.bilibili; q != nil {
+		queueName, idx, total = q.Name, q.Index, len(q.Items)
+		name, artists = q.Items[q.Index].Title, q.Items[q.Index].Author
 	}
 	a.music.mu.Unlock()
 

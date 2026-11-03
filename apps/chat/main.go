@@ -27,6 +27,7 @@ func main() {
 	// TTS 缓存放到配置目录下，别放系统临时目录（重启/清理后会全部重新合成）。
 	SetTTSCacheDir(filepath.Join(filepath.Dir(resolvedConfigPath), "tts"))
 	speaker := NewSpeaker()
+	speaker.SetTTSMusicDuckFile(filepath.Join(filepath.Dir(resolvedConfigPath), "tts-music-duck.json"))
 	speaker.SetMusicDuckFile(filepath.Join(filepath.Dir(resolvedConfigPath), "music-duck.json"))
 	speaker.SetTTSVolumeFile(filepath.Join(filepath.Dir(resolvedConfigPath), "tts-volume.json"))
 	engine := NewEngine(cfg, speaker)
@@ -49,6 +50,8 @@ func main() {
 	if cfg.TTS.UsesDoubao() {
 		log.Printf("   语音: 豆包 TTS (speaker=%s, format=%s, volume=%d%%, player=%s, wav_device=%s)",
 			cfg.TTS.Speaker, cfg.TTS.Format, speaker.TTSVolume(), cfg.TTS.Player, cfg.TTS.WavDevice)
+		log.Printf("🔉 播报期间压低音乐: enabled=%v，保留比例=%d%%（仅 WAV/notify）",
+			cfg.TTS.MusicDuck.Enabled, cfg.TTS.MusicDuck.Percent)
 	} else {
 		log.Printf("   语音: 音箱自带 TTS")
 	}

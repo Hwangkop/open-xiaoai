@@ -22,6 +22,28 @@ export interface DoubaoHealth {
   status?: string
 }
 
+export interface BilibiliHealth {
+  enabled: boolean
+  message?: string
+  ffmpeg_ready?: boolean
+  logged_in?: boolean
+  nickname?: string
+  saved_at?: number
+  expired?: boolean
+}
+
+export interface BilibiliQrStart {
+  key: string
+  image: string
+  url: string
+}
+
+export interface BilibiliQrPoll {
+  state: 'waiting' | 'scanned' | 'confirmed' | 'expired'
+  code: number
+  nickname?: string
+}
+
 export interface QrStart {
   status: string
   qr_image_base64?: string
@@ -97,7 +119,9 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   const { user, pass } = getCredentials()
   if (user || pass) headers.set('Authorization', 'Basic ' + base64Utf8(`${user}:${pass}`))
-  if (init.body != null && !headers.has('Content-Type')) {
+  const isFormData = typeof FormData !== 'undefined' && init.body instanceof FormData
+  const isURLSearchParams = typeof URLSearchParams !== 'undefined' && init.body instanceof URLSearchParams
+  if (init.body != null && !isFormData && !isURLSearchParams && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
 

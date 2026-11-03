@@ -60,6 +60,8 @@ type DoubaoTTS struct {
 	pitch      float64
 	emotion    string
 	dir        string
+	// 听书缓存必须等 TTSEnded，不能把断线后的半段音频永久保存。
+	requireComplete bool
 }
 
 // WithVoice 复制一份配置、换音色/情绪，用于管理台试听（不改全局配置）。
@@ -250,7 +252,7 @@ func (t *DoubaoTTS) synthesizeWS(ctx context.Context, text string) ([]byte, erro
 	for {
 		typ, data, err := conn.Read(ctx)
 		if err != nil {
-			if len(audio) > 0 {
+			if len(audio) > 0 && !t.requireComplete {
 				return audio, nil
 			}
 			return nil, fmt.Errorf("doubao tts read: %w", err)

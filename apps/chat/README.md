@@ -9,13 +9,16 @@
 - **关键词触发**：仅回答以「请」「你」等关键词开头的消息
 - **关键词/唤醒词打断**：仅当配置的关键词或唤醒词匹配时才打断 AI 回复
 - **文本流式 + TTS**：Chat Completions 流式输出，逐句 TTS 播放
+- **Codex 过程正文播报**：app-server 的 `agentMessage` 按 `itemId` 关联 `phase`，将 `commentary` 与最终回答依次送入同一条可打断 TTS 流水线；过程正文不混入最终回复和普通聊天历史，推理、工具事件不朗读。只有后端实际产生过程正文时才有这类播报，未标记 phase 的旧模型保留原有正文行为。
 - **对话历史**：可配置的上下文长度
 - **自定义回复**：通过配置文件设置固定回复（文字/音频链接）
-- **中断机制**：新消息到来时自动取消正在进行的 AI 回复
-- **MCP 工具**：内置 22 个工具（音乐 / 播报 / 定时任务 / 家电 / 搜索），供对话后端直接调用
+- **出声前补充**：Codex 常驻后端在首句提交 TTS 前，通过 `turn/steer` 接收后续输入，保留当前任务上下文，屏蔽旧答案；以实际 `userMessage` 事件确认补充生效。回合刚好结束或明确拒绝追加时，补充顺序进入下一轮。已提交播报后沿用打断旧轮的行为，明确的“闭嘴/停止回答”立即打断。
+- **MCP 工具**：内置 25 个工具（网易云 / B 站音乐 / 播报 / 定时任务 / 家电 / 搜索），供对话后端直接调用
 - **音乐态语音控制**：放歌时说「下一首」「停下」「大点声」不用喊唤醒词
 - **语音态路由**：带唤醒词的话先在工具路由 / 分类器 / codex 之间分流，判成动作就直接执行
 - **Web 管理页**：配置、唤醒词、路由漏斗、智能体上下文、TTS 试播
+
+出声前补充的协议时序、ASR 范围与验证方法见 [语音后续输入说明](../../docs/voice-followup-input.md)。
 
 ## 对话后端
 
@@ -31,15 +34,18 @@ codex 的相关配置在 `codex.bin` / `codex.workspace` / `codex.codex_home`：
 
 ## MCP 工具
 
-本服务在 `/mcp` 暴露 22 个工具（只监听 127.0.0.1，给同机的 codex 用）：
+本服务在 `/mcp` 暴露 25 个工具（只监听 127.0.0.1，给同机的 codex 用）：
 
 - **音乐**：`play_music` `search_music` `play_playlist` `play_daily` `list_playlists` `next_music` `stop_music` `set_volume`
+- **B 站音乐**：`search_bilibili_music` `play_bilibili_music` `download_bilibili_audio`
 - **播报**：`speak` `set_tts_volume`
 - **定时任务**：`create_task` `list_tasks` `update_task` `set_task_enabled` `run_task` `stop_task` `delete_task`
 - **家电**：`list_devices` `control_device`（走 Home Assistant）
 - **信息**：`web_search` `get_time` `end_conversation`
 
-对话链路里写死的分支越来越少：音乐态的"工具路由"是**一次 function calling**，模型直接从这 22 个工具里选，选完由同一套 `runMCPTool` 执行。
+音乐搜索与持续歌单分开：`play_music(query/index)` 只点播选中的一首，播完后接回原来的推荐、我喜欢或其他歌单的下一首；搜索候选不会替换原歌单。连续点播保留同一个原歌单位置，没有原歌单时播完停止。`play_playlist` / `play_daily` 才切换持续歌单；点播期间调用 `next_music` 会提前返回原歌单。点播标记、当前歌曲及原歌单序号一起保存到 `music-queue.json`，管理台 `#music` 显示点播状态与返回位置。旧版本保存的搜索队列只恢复当时选中的一首，无法找回已被旧版本覆盖的原歌单。
+
+对话链路里写死的分支越来越少：音乐态的"工具路由"是**一次 function calling**，模型直接从这 25 个工具里选，选完由同一套 `runMCPTool` 执行。
 
 ## 音乐态
 
@@ -277,6 +283,24 @@ music_router:
 | `tts.bit_rate` / `tts.sample_rate` | 码率与采样率，默认 32000 / 24000 |
 | `doubao2api.base_url` | 本机 doubao2api 地址，用于管理页扫码登录；留空则隐藏该面板 |
 | `doubao2api.api_key` | 与 doubao2api 的 `DOUBAO_API_KEY` 一致，未配置则留空 |
+| `knowledge.enabled` | 启用管理台知识库 API；发布后的资料仍需 Codex MCP worker 加载确认 |
+| `knowledge.root` / `knowledge.script` | registry、资料版本与只读 Node worker 的绝对路径；部署机不要沿用开发机相对路径 |
+| `knowledge.node` | Node 可执行文件，默认从 PATH 找 `node` |
+| `knowledge.timeout_seconds` | 管理端试搜/读取单次 worker 超时，默认 8 秒 |
+| `knowledge.max_upload_mb` | 单个 Markdown/TXT 上传上限，默认 20 MB |
+| `bilibili.enabled` | 启用 B 站公开视频搜索、音轨播放和最高音质保存 |
+| `bilibili.cookie` | 可选 B 站登录 Cookie；公开内容通常不需要 |
+| `bilibili.cache_dir` / `bilibili.music_dir` | 播放缓存目录和永久音乐目录 |
+| `bilibili.ffmpeg` | ffmpeg 可执行文件；需要支持 libmp3lame |
+| `bilibili.max_size_mb` / `bilibili.search_limit` | 单次音轨大小上限与搜索结果数 |
+
+知识库管理台（`/ui/#knowledge`）以书架形式展示多本书，一本书可包含多个 Markdown/TXT 章节文件。支持导入后自动发布、启停、版本回滚、检索试验与 worker 加载状态；来源和许可证不是必填。Go 管理端写 `registry.json`，Node worker 只读并在每次工具调用前检查 generation；两者必须指向同一知识库目录。安装、Windows MCP 配置和首期能力边界见 [knowledge/README.md](../../knowledge/README.md)，完整部署步骤见 [docs/deploy.md](../../docs/deploy.md)。提示词更新后须重启服务并创建新主会话；书籍发布不需要。
+
+听书管理台（`/ui/#audiobooks`）复用知识库里已发布的书籍，支持选书、查看真实章节、按章起播、暂停/继续与书签续听。服务直接将正文分段送给豆包 TTS，并持久缓存音频；agent 只调用播放工具，不输出整章正文。默认单请求串行、预取后面 2 段，确认语播完才起播。配置、缓存与真机验收边界见 [听书说明](../../docs/audiobooks.md)。
+
+B 站音乐支持在「应用管理」扫码登录，登录态保存在配置目录的 `bilibili-session.json`。搜索和公开内容不要求登录；播放前会选最高音轨并转换为兼容音箱的 320kbps MP3 缓存，永久保存时若有 Hi-Res 无损则保留 FLAC，否则保存 320kbps MP3。WBI 签名、buvid 匿名设备和登录 Cookie 会合并到同一请求链。管理页 `/ui/#bilibili` 提供搜索、推荐候选、试听、永久保存和停止操作，agent 通过 `search_bilibili_music` / `play_bilibili_music` / `download_bilibili_audio` 使用同一实现。
+
+管理台支持粘贴视频链接或 BV 号，识别所属合集与分 P，读取完整目录并选择单项、顺序或随机连续播放。B 站队列与音乐管理共用控制，播放结束不跳回旧网易云歌单；后台准备支持暂停、停止和取消旧任务。agent 新增 `get_bilibili_catalog` / `play_bilibili_playlist`，目录只传元信息。长视频内的歌曲不会自动拆分，首次仍需获取并转换完整音轨；详见 [合集与队列说明](../../docs/bilibili-playlists.md)。
 
 认证配置示例：
 

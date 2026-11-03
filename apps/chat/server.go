@@ -137,6 +137,9 @@ func startServer(ctx context.Context, app *appRuntime) error {
 
 	mux := http.NewServeMux()
 	admin := app.Admin()
+	mux.HandleFunc("/admin/api/audiobooks", withAppAuth(app, admin.handleAudiobooks))
+	mux.HandleFunc("/admin/api/audiobooks/", withAppAuth(app, admin.handleAudiobooks))
+	mux.HandleFunc("/audiobooks/audio/", admin.handleAudiobookAudio)
 	mux.HandleFunc("/admin/api/config", withAppAuth(app, admin.handleConfig))
 	mux.HandleFunc("/admin/api/tts", withAppAuth(app, admin.handleTTS))
 	mux.HandleFunc("/admin/api/tts/voices", withAppAuth(app, admin.handleTTSVoices))
@@ -173,6 +176,20 @@ func startServer(ctx context.Context, app *appRuntime) error {
 	mux.HandleFunc("/admin/api/route/recent", withAppAuth(app, admin.handleRouteRecent))
 	mux.HandleFunc("/admin/api/agents", withAppAuth(app, admin.handleAgents))
 	mux.HandleFunc("/admin/api/agents/action", withAppAuth(app, admin.handleAgentAction))
+	mux.HandleFunc("/admin/api/knowledge", withAppAuth(app, admin.handleKnowledge))
+	mux.HandleFunc("/admin/api/knowledge/", withAppAuth(app, admin.handleKnowledgeSub))
+	mux.HandleFunc("/admin/api/music", withAppAuth(app, admin.handleMusicPlayer))
+	mux.HandleFunc("/admin/api/bilibili/status", withAppAuth(app, admin.handleBilibiliStatus))
+	mux.HandleFunc("/admin/api/bilibili/qr", withAppAuth(app, admin.handleBilibiliQR))
+	mux.HandleFunc("/admin/api/bilibili/search", withAppAuth(app, admin.handleBilibiliSearch))
+	mux.HandleFunc("/admin/api/bilibili/catalog", withAppAuth(app, admin.handleBilibiliCatalog))
+	mux.HandleFunc("/admin/api/bilibili/queue", withAppAuth(app, admin.handleBilibiliQueue))
+	mux.HandleFunc("/admin/api/bilibili/play", withAppAuth(app, func(w http.ResponseWriter, r *http.Request) {
+		admin.handleBilibiliAction(w, r, false)
+	}))
+	mux.HandleFunc("/admin/api/bilibili/download", withAppAuth(app, func(w http.ResponseWriter, r *http.Request) {
+		admin.handleBilibiliAction(w, r, true)
+	}))
 	mux.HandleFunc("/admin/api/netease/status", withAppAuth(app, admin.handleNeteaseStatus))
 	mux.HandleFunc("/admin/api/netease/qr", withAppAuth(app, admin.handleNeteaseQR))
 	// MCP 工具端点：只允许本机访问（codex 在同一台机器上）
@@ -207,6 +224,7 @@ func startServer(ctx context.Context, app *appRuntime) error {
 		}
 		http.ServeFile(w, r, filepath.Join(defaultTTSDir(), name))
 	})
+	mux.HandleFunc("/bilibili/audio/", admin.handleBilibiliAudio)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if !authorizeAppRequest(app, w, r) {
 			return

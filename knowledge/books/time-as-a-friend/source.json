@@ -1,0 +1,360 @@
+{
+  "title": "把时间当作朋友",
+  "author": "李笑来",
+  "edition": "第三版",
+  "repository": "https://github.com/xiaolai/time-as-a-friend",
+  "revision": "ba8305dc38a1868b78acf44136d1a0d3bf5d0af2",
+  "license": "CC BY-NC-ND 3.0 US",
+  "license_file": "original/CC-BY-NC-ND_license.md",
+  "archive_url": "https://codeload.github.com/xiaolai/time-as-a-friend/zip/ba8305dc38a1868b78acf44136d1a0d3bf5d0af2",
+  "files": {
+    "CC-BY-NC-ND_license.md": {
+      "git_blob_sha1": "71300c21ee6e105fb7bcf1a9770e38bba4e48cd6",
+      "bytes": 14344
+    },
+    "Chapter0.md": {
+      "git_blob_sha1": "bf48a011bfa0163ad49f5b2af11f1e0d427d28ae",
+      "bytes": 15227
+    },
+    "Chapter1.md": {
+      "git_blob_sha1": "6bb1247b9b7b142c25e613bfa03f5cc2431b06dc",
+      "bytes": 23290
+    },
+    "Chapter2.md": {
+      "git_blob_sha1": "be68aab6f4db779da453641c3505d1ffe19f29e4",
+      "bytes": 35423
+    },
+    "Chapter3.md": {
+      "git_blob_sha1": "d12c02713dd5c08902c726075a2f258598546b5c",
+      "bytes": 102339
+    },
+    "Chapter4.md": {
+      "git_blob_sha1": "4c512a21925f087da141b374386a420ee78b2de8",
+      "bytes": 49713
+    },
+    "Chapter5.md": {
+      "git_blob_sha1": "09135164e84c39defb6bd4b8896956559a83302b",
+      "bytes": 92315
+    },
+    "Chapter6.md": {
+      "git_blob_sha1": "e0ffc297caf0b05cb259fab491ff66be8b87688f",
+      "bytes": 51271
+    },
+    "Chapter7.md": {
+      "git_blob_sha1": "3b4770a0c36205703830502bab28bf12320718cc",
+      "bytes": 138624
+    },
+    "Forword.md": {
+      "git_blob_sha1": "f41b824fe9a8587aa25406f622efaf79d97da368",
+      "bytes": 8970
+    },
+    "Preface.md": {
+      "git_blob_sha1": "853abdf6f24df5da337b3d1b131f4b8cbc17649f",
+      "bytes": 12548
+    },
+    "README.md": {
+      "git_blob_sha1": "325513d871dd809a0ff09ea38603adff3706f621",
+      "bytes": 4640
+    },
+    "images/001_Image_1.png": {
+      "git_blob_sha1": "7e9b95ad45973edfed3a2216f943748b9e92bea4",
+      "bytes": 42399
+    },
+    "images/002_Image_1.png": {
+      "git_blob_sha1": "5a4348f87f6c5193bf31d309dba2793e58742e3a",
+      "bytes": 225382
+    },
+    "images/006_Image_1.png": {
+      "git_blob_sha1": "f669421fd17ea36f7dcb80c6e6704a5bd297acd7",
+      "bytes": 423458
+    },
+    "images/007_Image_1.png": {
+      "git_blob_sha1": "2e0179ece1a9b8325afa7ee1fa05b67b5e2e4d84",
+      "bytes": 60005
+    },
+    "images/008_Image_1.png": {
+      "git_blob_sha1": "240986999e1678edf161d954f49369901a9d58eb",
+      "bytes": 26115
+    },
+    "images/010_Image_1.png": {
+      "git_blob_sha1": "5f040ed476b25b93f0d1c4d51c25ea5f41c14313",
+      "bytes": 915345
+    },
+    "images/012_Image_1.png": {
+      "git_blob_sha1": "8bb5ee76ac7348b6f632156574e74853cc53b34f",
+      "bytes": 121068
+    },
+    "images/012_Image_2.png": {
+      "git_blob_sha1": "3ac6be2cdb6765e82da3b25f638d0cb3e18accb1",
+      "bytes": 28175
+    },
+    "images/013_Image_1.png": {
+      "git_blob_sha1": "a0ed01957f81a23e93f564953d275e3fdc7eddfd",
+      "bytes": 93081
+    },
+    "images/017_Image_1.png": {
+      "git_blob_sha1": "6eeb71c45c3c5c03559c2571087410f26ec7c82a",
+      "bytes": 63793
+    },
+    "images/022_Image_1.png": {
+      "git_blob_sha1": "9c58c56924311518a1dca333669bb7bd146fd594",
+      "bytes": 69717
+    },
+    "images/026_Image_1.png": {
+      "git_blob_sha1": "800e4c057bc6bdf7ce2ff2f2124827ef69e0ba05",
+      "bytes": 130083
+    },
+    "images/032_Image_1.png": {
+      "git_blob_sha1": "ab17071de54bc09a36aa0472c96ae744a214d3bd",
+      "bytes": 49851
+    },
+    "images/033_Image_1.png": {
+      "git_blob_sha1": "9062a44c3ec0e556f628e1b2d79484ddadb48224",
+      "bytes": 56376
+    },
+    "images/036_Image_1.png": {
+      "git_blob_sha1": "6761ed840422fc2898c641f09c7d718f2bbd8383",
+      "bytes": 85309
+    },
+    "images/040_Image_1.png": {
+      "git_blob_sha1": "d7b44f74cbb4904e062e74e58e497013d3a5ea46",
+      "bytes": 75733
+    },
+    "images/041_Image_1.png": {
+      "git_blob_sha1": "6faa957365b46dbe84fe4f0e4b530f07fa7e67c3",
+      "bytes": 247758
+    },
+    "images/042_Image_1.png": {
+      "git_blob_sha1": "5cedd80f64ff51e39dc85c05535718c11bf1641d",
+      "bytes": 37372
+    },
+    "images/043_Image_1.png": {
+      "git_blob_sha1": "26f4b9d76c23758a9fa2a1bad31286f9938db910",
+      "bytes": 38367
+    },
+    "images/045_Image_1.png": {
+      "git_blob_sha1": "3d77d3bc421fdd73cfaf33fa9027daac52de827c",
+      "bytes": 46277
+    },
+    "images/046_Image_1.png": {
+      "git_blob_sha1": "d107a5228f36b702de9128f03cb925ce79f2f0c3",
+      "bytes": 42738
+    },
+    "images/048_Image_1.png": {
+      "git_blob_sha1": "6d634daec1d0f54fef02fb177aff8078fb5fba74",
+      "bytes": 43286
+    },
+    "images/056_Image_1.png": {
+      "git_blob_sha1": "092de551e78d29f273c860cad02f9b36ab04ee6b",
+      "bytes": 38134
+    },
+    "images/068_Image_1.png": {
+      "git_blob_sha1": "0d56ecbe19358933376977267e9a30d597d42990",
+      "bytes": 90562
+    },
+    "images/069_Image_1.png": {
+      "git_blob_sha1": "d4c5a962d4418cb77947e6b4d3ec202c13542d13",
+      "bytes": 104447
+    },
+    "images/072_Image_1.png": {
+      "git_blob_sha1": "b2e2d09b18fd066fd14ff1b74c8501c82fbd05ee",
+      "bytes": 41353
+    },
+    "images/075_Image_1.png": {
+      "git_blob_sha1": "9551c3d7932383aca11ab9a8531a2cd62290464f",
+      "bytes": 143978
+    },
+    "images/076_Image_1.png": {
+      "git_blob_sha1": "36bbf6932edd879cc8fe0686a3f0da9fd3b953af",
+      "bytes": 202812
+    },
+    "images/077_Image_1.png": {
+      "git_blob_sha1": "f9d83b0e96d0891001cc9cd9c394032e327b6bab",
+      "bytes": 66881
+    },
+    "images/080_Image_1.png": {
+      "git_blob_sha1": "c92a8e3f7e541e1a1b8826ac47b039baac176f07",
+      "bytes": 363337
+    },
+    "images/092_Image_1.png": {
+      "git_blob_sha1": "8d4af8bab62e03cce38aa9c438e8ad1757363c75",
+      "bytes": 52179
+    },
+    "images/099_Image_1.png": {
+      "git_blob_sha1": "58f7a4d3b4ea0e5ca001fdcc7cd46dfd62e708bc",
+      "bytes": 104261
+    },
+    "images/103_Image_1.png": {
+      "git_blob_sha1": "843f7157cfea9ee565e370b6010e4e5068a4a0bc",
+      "bytes": 34340
+    },
+    "images/107_Image_1.png": {
+      "git_blob_sha1": "3027a867ed596fd3d0c4199edae2f26055e2634d",
+      "bytes": 78834
+    },
+    "images/121_Image_1.png": {
+      "git_blob_sha1": "f065584b16567bcaf2b19c2703c92233b02365b2",
+      "bytes": 49254
+    },
+    "images/123_Image_1.png": {
+      "git_blob_sha1": "c4db994a735099737f80dcf93ac67b1b54ac1a28",
+      "bytes": 69195
+    },
+    "images/127_Image_1.png": {
+      "git_blob_sha1": "b0923113340da402150c538f33c8190bf6a32a06",
+      "bytes": 57652
+    },
+    "images/127_Image_2.png": {
+      "git_blob_sha1": "5ab0b0eec5bfbd062a63ce9127c56b3327e587e6",
+      "bytes": 59201
+    },
+    "images/127_Image_3.png": {
+      "git_blob_sha1": "c00f10ca2d17b45ab0facd69b1fdc1620424e053",
+      "bytes": 64395
+    },
+    "images/128_Image_1.png": {
+      "git_blob_sha1": "75c7560f290d6a555e6bf31669fe32a948d5dc2a",
+      "bytes": 433676
+    },
+    "images/131_Image_1.png": {
+      "git_blob_sha1": "46b705decc45e0c44fdc6e9ec9d8b06cf6ecbfb1",
+      "bytes": 24488
+    },
+    "images/148_Image_1.png": {
+      "git_blob_sha1": "88a0ada7359ac558a90947338620e719aeb38953",
+      "bytes": 68243
+    },
+    "images/150_Image_1.png": {
+      "git_blob_sha1": "d257931c47f8a308b562654708b01e32d41e5425",
+      "bytes": 81000
+    },
+    "images/160_Image_1.png": {
+      "git_blob_sha1": "a8702e5c6bac7c0ae9adbcfdeea1ab601e13ca4c",
+      "bytes": 333917
+    },
+    "images/171_Image_1.png": {
+      "git_blob_sha1": "f8a2369bd7614c6edc6036c35ce8c28547c098e5",
+      "bytes": 68902
+    },
+    "images/173_Image_1.png": {
+      "git_blob_sha1": "0ccad6f67b2736b2a5607b8b99bf234e326ddeeb",
+      "bytes": 36874
+    },
+    "images/181_Image_1.png": {
+      "git_blob_sha1": "b01d5695f674336a895876e9f45fb8b89bae23ba",
+      "bytes": 302005
+    },
+    "images/193_Image_1.png": {
+      "git_blob_sha1": "29676372d9b5f93d507f261d23e665eca028c7d9",
+      "bytes": 86839
+    },
+    "images/199_Image_1.png": {
+      "git_blob_sha1": "9845dbe1a41ea1dcb265d2cb44650dc073746f3b",
+      "bytes": 247423
+    },
+    "images/200_Image_1.png": {
+      "git_blob_sha1": "c5d3bed0504b367a09bd054cee7ac4525992d933",
+      "bytes": 393411
+    },
+    "images/202_Image_1.png": {
+      "git_blob_sha1": "38aff160e8a007363fb97ea5b9fb14131faa644f",
+      "bytes": 143032
+    },
+    "images/204_Image_1.png": {
+      "git_blob_sha1": "d700d75325f2c8fc57efd0a2ea3edb5ab63e12a6",
+      "bytes": 55966
+    },
+    "images/205_Image_1.png": {
+      "git_blob_sha1": "5d22863dd10a7403ffd4393692c20a0a08ae030f",
+      "bytes": 74480
+    },
+    "images/207_Image_1.png": {
+      "git_blob_sha1": "00353f33c0138ef2d706ce14274bce0a7ccbdec4",
+      "bytes": 56648
+    },
+    "images/220_Image_1.png": {
+      "git_blob_sha1": "e83765dc7da458e609e0695b70a4f2cc25e92408",
+      "bytes": 69669
+    },
+    "images/222_Image_1.png": {
+      "git_blob_sha1": "827eb10761c531f98c8a4ae51524b4ea6671d565",
+      "bytes": 89812
+    },
+    "images/226_Image_1.png": {
+      "git_blob_sha1": "aaf205830ba9a59683bb6da22c124e3152911382",
+      "bytes": 62836
+    },
+    "images/230_Image_1.png": {
+      "git_blob_sha1": "cd36f6112282ce3a671e49f930f43ee359c8c66c",
+      "bytes": 195312
+    },
+    "images/235_Image_1.png": {
+      "git_blob_sha1": "ab8c00fa9b8c22b3f7b2c13f0da15e3ea4bffcf6",
+      "bytes": 86844
+    },
+    "images/237_Image_1.png": {
+      "git_blob_sha1": "b1d9d97ffa08950a4cb1e19539696d5c3883bd79",
+      "bytes": 127670
+    },
+    "images/243_Image_1.png": {
+      "git_blob_sha1": "87c8bf4e38a0d0d8b204c236a0174208f4817f32",
+      "bytes": 50407
+    },
+    "images/251_Image_1.png": {
+      "git_blob_sha1": "9c937de440f5159250663e9d2db505f0d929363b",
+      "bytes": 56835
+    },
+    "images/252_Image_1.png": {
+      "git_blob_sha1": "4debbf60be46b4b64e0d6e94787ced07c469570b",
+      "bytes": 57089
+    },
+    "images/257_Image_1.png": {
+      "git_blob_sha1": "f8d885434131b903a27bb1c7f7e495b7a9906ca5",
+      "bytes": 46065
+    },
+    "images/259_Image_1.png": {
+      "git_blob_sha1": "944f415ca6ec8e0a2f40f6f5421bb4967ca06b93",
+      "bytes": 57771
+    },
+    "images/266_Image_1.png": {
+      "git_blob_sha1": "a56ca4f37d1b88d75e231e8fa3eded67befcf9a4",
+      "bytes": 71082
+    },
+    "images/271_Image_1.png": {
+      "git_blob_sha1": "161ae4a75c9e697b9d3c21138bd786e814ddb822",
+      "bytes": 275266
+    },
+    "images/274_Image_1.png": {
+      "git_blob_sha1": "eb6d6169cdaa115c1783c9ddb4d4289f4e2b27fe",
+      "bytes": 130382
+    },
+    "images/281_Image_1.png": {
+      "git_blob_sha1": "3006a32bc38dacdb8460dd54ef845fe5206130fe",
+      "bytes": 74153
+    },
+    "images/640.jpg": {
+      "git_blob_sha1": "24293f713468d66a4dcc89787dc244e53d2c3754",
+      "bytes": 36706
+    },
+    "images/cover.jpg": {
+      "git_blob_sha1": "ee19d1fec4468c1d914f55777a0796cef3fe300b",
+      "bytes": 572446
+    },
+    "images/poster.jpg": {
+      "git_blob_sha1": "350d3c044e1b0a1b5e82f27c1bec9a14dd875fa4",
+      "bytes": 463209
+    },
+    "pdfs/first-edition.pdf": {
+      "git_blob_sha1": "744822a7ade0ad3d15c7a27f13bc1696b4311774",
+      "bytes": 4532445
+    },
+    "pdfs/souvenir-edition.pdf": {
+      "git_blob_sha1": "fb36e95098951c1362ad1470ff49a0710922d507",
+      "bytes": 4584843
+    },
+    "pdfs/third-edition.pdf": {
+      "git_blob_sha1": "73f0cebb094472373b6a628b86390874ad5fc1d5",
+      "bytes": 2085489
+    }
+  }
+}

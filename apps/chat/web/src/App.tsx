@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   AudioLines,
+  BookOpenText,
+  BrainCircuit,
+  Headphones,
+  Music2,
   CalendarClock,
   MessagesSquare,
   Mic,
   Boxes,
-  Bot,
   Moon,
   SlidersHorizontal,
   Sun,
-  Volume2,
+  Tv,
   Wifi,
   WifiOff,
   Settings2,
@@ -24,24 +27,30 @@ import { DoubaoLoginProvider } from '@/lib/doubaoLogin'
 import { DoubaoView } from '@/views/DoubaoView'
 import { ScheduleView } from '@/views/ScheduleView'
 import { ConfigView } from '@/views/ConfigView'
-import { TtsView } from '@/views/TtsView'
 import { WakeView } from '@/views/WakeView'
 import { AppManageView } from '@/views/AppManageView'
 import { AgentsView } from '@/views/AgentsView'
+import { KnowledgeView } from '@/views/KnowledgeView'
+import { AudiobooksView } from '@/views/AudiobooksView'
+import { BilibiliView } from '@/views/BilibiliView'
 import { AudioTestView } from '@/views/AudioTestView'
+import { MusicView } from '@/views/MusicView'
 import { api, getBase } from '@/lib/api'
 import { useToasts, type ToastItem } from '@/lib/useToasts'
 import { cn } from '@/lib/utils'
 
-type ViewId = 'doubao' | 'apps' | 'schedule' | 'wake' | 'config' | 'tts' | 'audiotest' | 'agents'
+type ViewId = 'doubao' | 'apps' | 'schedule' | 'wake' | 'config' | 'audiotest' | 'agents' | 'knowledge' | 'audiobooks' | 'music' | 'bilibili'
 
 const NAV: { id: ViewId; label: string; icon: typeof MessagesSquare; hint: string }[] = [
   { id: 'apps', label: '应用管理', icon: Boxes, hint: '豆包 / 网易云 账号登录' },
-  { id: 'schedule', label: '定时任务', icon: CalendarClock, hint: '轮询豆包任务并播报到音箱' },
+  { id: 'music', label: '音乐管理', icon: Music2, hint: '当前播放、歌曲队列与播放控制' },
+  { id: 'bilibili', label: 'B站音乐', icon: Tv, hint: '搜索公开视频、播放和下载音轨' },
+  { id: 'schedule', label: '定时任务', icon: CalendarClock, hint: '到点由服务端执行并直接播报' },
   { id: 'wake', label: '唤醒与识别', icon: Mic, hint: '唤醒词、识别引擎与在线测试' },
-  { id: 'agents', label: '智能体', icon: Bot, hint: '三条会话的上下文管理' },
+  { id: 'agents', label: '智能体', icon: BrainCircuit, hint: '三条会话的上下文管理' },
+  { id: 'knowledge', label: '知识库', icon: BookOpenText, hint: '参考资料、检索试验与使用规则' },
+  { id: 'audiobooks', label: '听书', icon: Headphones, hint: '选择章节、按需合成与书签续听' },
   { id: 'config', label: '配置', icon: SlidersHorizontal, hint: '在线编辑 chat 配置' },
-  { id: 'tts', label: '语音测试', icon: Volume2, hint: '把文字发到音箱试听' },
   { id: 'audiotest', label: '音频通道测试', icon: AudioLines, hint: '音乐开关 + 各播放通道试播' },
 ]
 
@@ -50,6 +59,7 @@ const VIEW_IDS = NAV.map((n) => n.id)
 // 当前页面用 hash 保存（#config / #wake…），刷新和前进后退都能保持
 function viewFromHash(): ViewId {
   const raw = window.location.hash.replace(/^#\/?/, '').trim()
+  if (raw === 'tts') return 'audiotest'
   return (VIEW_IDS as string[]).includes(raw) ? (raw as ViewId) : 'apps'
 }
 
@@ -107,12 +117,12 @@ export default function App() {
   return (
     <DoubaoLoginProvider onError={notifyError}>
       <div className="flex h-full bg-background text-foreground">
-      <aside className="flex w-[228px] shrink-0 flex-col border-r border-border bg-card">
+      <aside className="flex w-16 shrink-0 flex-col border-r border-border bg-card sm:w-[228px]">
         <div className="flex items-center gap-2.5 px-4 py-5">
           <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <MessagesSquare className="size-4" />
           </div>
-          <div className="min-w-0">
+          <div className="hidden min-w-0 sm:block">
             <div className="truncate text-ui-base font-semibold">Open XiaoAI</div>
             <div className="truncate text-ui-xs text-muted-foreground">音箱管理台</div>
           </div>
@@ -126,16 +136,18 @@ export default function App() {
               <button
                 key={item.id}
                 type="button"
+                title={item.label}
+                aria-label={item.label}
                 onClick={() => { window.location.hash = item.id }}
                 className={cn(
-                  'flex h-8 items-center gap-2 rounded-md px-2 text-left text-ui-base transition-colors',
+                  'flex h-8 items-center justify-center gap-2 rounded-md px-2 text-left text-ui-base transition-colors sm:justify-start',
                   selected
                     ? 'bg-primary-soft font-medium text-primary'
                     : 'text-sidebar-foreground hover:bg-muted hover:text-foreground',
                 )}
               >
-                <Icon className="size-4" />
-                {item.label}
+                <Icon className="size-4 shrink-0" />
+                <span className="hidden sm:inline">{item.label}</span>
               </button>
             )
           })}
@@ -154,13 +166,13 @@ export default function App() {
             ) : (
               <Wifi className="size-3.5 text-muted-foreground" />
             )}
-            <span className="min-w-0 flex-1 truncate">
+            <span className="hidden min-w-0 flex-1 truncate sm:inline">
               {conn === 'ok' ? '已连接' : conn === 'error' ? '未连接' : '检查中'}
             </span>
             <Settings2 className="size-3.5 opacity-60" />
           </button>
           <div className="flex items-center justify-between px-2 pb-1">
-            <span className="max-w-[150px] truncate text-ui-xs text-muted-foreground">
+            <span className="hidden max-w-[150px] truncate text-ui-xs text-muted-foreground sm:inline">
               {connMessage}
             </span>
             <Button
@@ -185,9 +197,12 @@ export default function App() {
             {view === 'config' && <ConfigView onNotify={notify} onError={notifyError} />}
             {view === 'apps' && <AppManageView onNotify={notify} onError={notifyError} />}
             {view === 'wake' && <WakeView onNotify={notify} onError={notifyError} />}
-            {view === 'tts' && <TtsView onNotify={notify} onError={notifyError} />}
             {view === 'audiotest' && <AudioTestView onNotify={notify} onError={notifyError} />}
+            {view === 'music' && <MusicView onNotify={notify} onError={notifyError} />}
+            {view === 'audiobooks' && <AudiobooksView onNotify={notify} onError={notifyError} />}
+            {view === 'bilibili' && <BilibiliView onNotify={notify} onError={notifyError} />}
             {view === 'agents' && <AgentsView onNotify={notify} onError={notifyError} />}
+            {view === 'knowledge' && <KnowledgeView onNotify={notify} onError={notifyError} />}
           </div>
         </div>
       </main>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CheckCircle2, Loader2, LogIn, Music2, RefreshCw, Sparkles } from 'lucide-react'
+import { CheckCircle2, Loader2, LogIn, Music2, RefreshCw, Sparkles, Tv } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -7,6 +7,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import {
   api,
   type DoubaoHealth,
+  type BilibiliHealth,
+  type BilibiliQrStart,
+  type BilibiliQrPoll,
   type QrStart,
   type QrPoll,
   type NeteaseStatus,
@@ -158,6 +161,7 @@ function QRLoginCard({
 export function AppManageView({ onNotify, onError }: Props) {
   const [doubao, setDoubao] = useState<DoubaoHealth | null>(null)
   const [netease, setNetease] = useState<NeteaseStatus | null>(null)
+  const [bilibili, setBilibili] = useState<BilibiliHealth | null>(null)
 
   const loadDoubao = useCallback(async () => {
     try {
@@ -175,10 +179,19 @@ export function AppManageView({ onNotify, onError }: Props) {
     }
   }, [onError])
 
+  const loadBilibili = useCallback(async () => {
+    try {
+      setBilibili(await api<BilibiliHealth>('/admin/api/bilibili/status'))
+    } catch (err) {
+      onError(err)
+    }
+  }, [onError])
+
   useEffect(() => {
     void loadDoubao()
     void loadNetease()
-  }, [loadDoubao, loadNetease])
+    void loadBilibili()
+  }, [loadDoubao, loadNetease, loadBilibili])
 
   return (
     <div className="grid gap-3 lg:grid-cols-2">
@@ -226,6 +239,31 @@ export function AppManageView({ onNotify, onError }: Props) {
           return 'waiting'
         }}
         onDone={loadNetease}
+        onNotify={onNotify}
+        onError={onError}
+      />
+
+      <QRLoginCard
+        title="Bilibili"
+        icon={<Tv className="size-4" />}
+        hint="登录后可使用需要账号态的公开内容；未登录也能搜索和下载公开视频音轨。"
+        loggedIn={!!bilibili?.logged_in}
+        detail={bilibili?.nickname || (bilibili?.saved_at ? new Date(bilibili.saved_at * 1000).toLocaleString() : undefined)}
+        onRefresh={loadBilibili}
+        startQr={async () => {
+          const r = await api<BilibiliQrStart>('/admin/api/bilibili/qr', { method: 'POST' })
+          return { key: r.key, image: 'data:image/png;base64,' + r.image }
+        }}
+        pollQr={async (key) => {
+          const r = await api<BilibiliQrPoll>(
+            `/admin/api/bilibili/qr?key=${encodeURIComponent(key || '')}`,
+          )
+          if (r.state === 'confirmed') return 'done'
+          if (r.state === 'expired') return 'expired'
+          if (r.state === 'scanned') return 'scanned'
+          return 'waiting'
+        }}
+        onDone={loadBilibili}
         onNotify={onNotify}
         onError={onError}
       />

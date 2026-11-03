@@ -21,19 +21,22 @@ type speechSeg struct {
 }
 
 type speechPipeline struct {
-	sp   *Speaker
-	ctx  context.Context
-	in   chan *speechSeg
-	done chan struct{}
-	once sync.Once
+	sp             *Speaker
+	ctx            context.Context
+	in             chan *speechSeg
+	done           chan struct{}
+	once           sync.Once
+	closeDuckReply func()
 }
 
 func newSpeechPipeline(ctx context.Context, sp *Speaker) *speechPipeline {
+	ctx, closeDuckReply := sp.WithTTSDuckReply(ctx)
 	p := &speechPipeline{
-		sp:   sp,
-		ctx:  ctx,
-		in:   make(chan *speechSeg, 16),
-		done: make(chan struct{}),
+		closeDuckReply: closeDuckReply,
+		sp:             sp,
+		ctx:            ctx,
+		in:             make(chan *speechSeg, 16),
+		done:           make(chan struct{}),
 	}
 	go p.run()
 	return p
@@ -67,6 +70,7 @@ func (p *speechPipeline) AddWithEmotion(text, emotion string) {
 // run 按顺序播放。播第 N 句时，第 N+1 句通常已经合成好了。
 func (p *speechPipeline) run() {
 	defer close(p.done)
+	defer p.closeDuckReply()
 	for {
 		var seg *speechSeg
 		select {
@@ -90,7 +94,7 @@ func (p *speechPipeline) run() {
 		}
 		// 我们的音频要开播了，先解除对小爱原生播放的压制
 		p.sp.ReleaseNativeSuppression()
-		if err := p.sp.PlayURL(url, true); err != nil {
+		if err := p.sp.PlayURLContext(p.ctx, url, true); err != nil {
 			log.Printf("⚠️ 播放失败: %v", err)
 			return
 		}

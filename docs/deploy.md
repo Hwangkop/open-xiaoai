@@ -221,7 +221,7 @@ url = "http://127.0.0.1:4399/mcp"
 default_tools_approval_mode = "approve"
 ```
 
-MCP 服务端由 chat 自己提供（`/mcp`，仅本机）。工具：音乐 7 个、播报、定时任务 7 个、家电 2 个、搜索、时间、结束对话。
+MCP 服务端由 chat 自己提供（`/mcp`，仅本机）。工具：网易云音乐 7 个、B 站音乐搜索/播放/下载 3 个、播报、定时任务 7 个、家电 2 个、搜索、时间、结束对话。
 `prompt.system` 是在 `thread/start` 时作为 `baseInstructions` 传给 codex 的，**改完必须重启服务**才会新建 thread 生效。
 
 ### 3.6 macOS 部署（最简单）
@@ -409,6 +409,7 @@ YAML 缩进必须是 `homeassistant:` 下两空格；粘贴丢缩进会变成顶
 |---|---|---|---|
 | 豆包（会话/定时任务） | 应用管理 → 豆包 → 扫码登录 | `doubao-session.json` | 用豆包 App 扫码 |
 | 网易云音乐 | 应用管理 → 网易云音乐 → 扫码登录 | `netease-session.json` | 未登录只能播免费曲目 |
+| Bilibili | 应用管理 → Bilibili → 扫码登录 | `bilibili-session.json` | 未登录可搜公开内容；登录后可使用账号态公开音轨 |
 | Home Assistant | 配置 → 家电 → 长期访问令牌 | `config.yaml`（远端） | 见 5.5 |
 
 以上 session 文件都在 `.gitignore` 里，**绝不要提交**。
@@ -418,7 +419,13 @@ YAML 缩进必须是 `homeassistant:` 下两空格；粘贴丢缩进会变成顶
 ## 7. 管理台
 
 - 地址 `http://<server>:4399/ui/`（前端是静态文件，可单独部署；API 同源）
-- 页面：豆包（会话记录）/ 应用管理（扫码登录）/ 定时任务 / 唤醒与识别 / 配置 / 语音测试
+- 页面：豆包（会话记录）/ 应用管理（扫码登录）/ 音乐管理 / B站音乐 / 定时任务 / 唤醒与识别 / 智能体 / 知识库 / 配置 / 音频通道测试
+- 「B站音乐」：搜索公开视频，自动推荐更可能是单曲/高音质的结果，按需提取最高可用音轨并在音箱播放或永久保存 MP3。播放文件进入缓存目录，明确点击“保存到音乐库”后才复制到永久音乐目录；只处理公开可访问内容。
+- B 站扫码登录在「应用管理」里完成，Cookie 单独保存到 `bilibili-session.json`，不会写回 `config.yaml`。搜索与音轨接口会合并登录 Cookie、匿名 `buvid` 并使用 WBI 签名。ffmpeg 必须支持 `libmp3lame`；播放缓存统一转为 MP3，永久保存时 Hi-Res 无损保留 FLAC。缓存目录和 ffmpeg 路径在「配置 → B站音乐」维护。
+- 「音频通道测试」：保留本地 ASR、背景音乐开关、各播放通道、音量与试播；旧 `#tts` 链接会打开该页面。
+- 「知识库」：以紧凑书架展示多本书，点开可看目录与只读原文、启停、发布/回滚、检索试验、当前使用规则和 agent worker 加载状态。第一期导入支持 UTF-8 Markdown/TXT，可一次选择同一本书的多个章节文件；来源、许可证字段都不是必填，与 Codex 使用同一份 Node 检索实现。
+- 「音乐管理」（`/ui/#music`）：当前歌曲、播放状态、进度、完整队列；支持暂停、继续、上下首、重播、点选歌曲及每日推荐。暂停与临时中断保留监控；设备明确播完或上报曲尾进度后自动切歌。只报空闲且无曲尾证据时显示“播放中断”，可手动继续或重播；进度来自估算时会标“约”。
+- 搜索点播只播放选中的一首，结束后继续原歌单下一首；没有原歌单则停止。管理页会显示“单次点播”和返回位置，点播期间的“回到歌单”可提前结束点播。明确播放每日推荐或其他歌单才会更换持续队列。
 - 「唤醒与识别」：自定义唤醒词、在线测试、引擎切换（热生效）
 - 「配置」：表单 / YAML 双视图，左侧分区；密码类字段不回显，留空保持不变
 - 登录认证由 `auth.users` 控制；为空表示不校验（仅内网使用）
@@ -487,3 +494,65 @@ YAML 缩进必须是 `homeassistant:` 下两空格；粘贴丢缩进会变成顶
 校验/启动失败会关闭持久开关、写 `native-guard.failed`、撤销租约并尝试恢复原生服务，client 继续兼容启动。查看 `native-guard.sh status`、`/tmp/xiaoai-native-guard/boot.log` 与客户端实际 effective 日志。固件升级后指纹不匹配时必须重新验证，不能自动更新清单跳过检查。
 
 回滚先把服务端隔离方式改回 freeze 并同步，随后空闲时执行 `/data/open-xiaoai/native-guard.sh disable`（新版回滚脚本同样委托此命令）。它移除持久开关和本方案覆盖，恢复原生 aivs；开关关闭后重启不会重新加载。首次安装/恢复会重启 aivs，不能宣称对当前音频无影响。
+
+
+## Agent 知识库（Codex + 管理台）
+
+第一期知识库由三部分组成：管理台 `/ui/#knowledge`、Go 管理 API、只读 Node MCP worker。资料导入、发布和停用由 Go 写入 `knowledge/registry.json`；worker 每次检索/读取前检查 generation，确认新版本可完整加载后切换内存快照。资料更新不需要升级音箱 client，也不需要重建主 thread。
+
+准备初始书籍：
+
+```bash
+python3 tools/knowledge/fetch_time_as_a_friend.py
+python3 tools/knowledge/import_public_books.py
+node --test tools/knowledge/server.test.cjs
+```
+
+首次需要网络；可预先下载固定版本 ZIP，再用 `--archive` 安装。`import_public_books.py` 会按固定提交导入《我也有话要说》《自学是门手艺》《定投改变命运（第三版）》的 Markdown 正文。来源、原文件大小和 Git blob SHA1 分别见各书 `source.json`。原文目录不入 Git，部署或重建环境时单独准备。
+
+部署目录示例：
+
+```text
+E:\open-xiaoai\
+  knowledge\
+    registry.json
+    server.cjs
+    books\time-as-a-friend\
+    sources\                       # 管理台上传的资料，按来源和版本隔离
+    .runtime\worker-status.json    # Node worker 心跳与加载代次，运行态文件
+  config.yaml
+```
+
+将 `knowledge/registry.json` 和 `tools/knowledge/server.cjs` 部署到实际知识库目录。`config.yaml` 只加或更新本机路径，不要覆盖其它平台配置：
+
+```yaml
+knowledge:
+  enabled: true
+  root: "E:\\open-xiaoai\\knowledge"
+  node: "C:\\Program Files\\nodejs\\node.exe"
+  script: "E:\\open-xiaoai\\knowledge\\server.cjs"
+  timeout_seconds: 8
+  max_upload_mb: 20
+```
+
+Codex 仍通过独立 MCP 接入只读 worker。仅增改实际 `CODEX_HOME/config.toml` 的 `[mcp_servers.knowledge]`，保留模型、其他 MCP 和凭据：
+
+```toml
+[mcp_servers.knowledge]
+command = 'C:\Program Files\nodejs\node.exe'
+args = ['E:\open-xiaoai\knowledge\server.cjs', '--root', 'E:\open-xiaoai\knowledge']
+enabled_tools = ["search_book", "read_book_section"]
+default_tools_approval_mode = "approve"
+```
+
+运行配置更新 `prompt.system` 时，操作前备份配置、Codex TOML 和 `codex-thread.json`；重启 chat 并创建新主 thread，使新的 baseInstructions 与 MCP 生效。资料发布不要求重建 thread。失败时恢复配置及 thread 指针，再启动原服务。
+
+管理台自检：
+
+1. 导入当前四本公开书稿后，「书架」应显示 178 个保存文件、102 个可检索文件、731 个片段；《把时间当作朋友》里的图片、PDF 和许可文件标为“不参与检索”。
+2. 「检索试验」输入“记录开销 第三组练习”，应命中 `Chapter3:375`，读出第一周晚上回忆、第二周随时记录刚做完事情的耗时。
+3. 添加一本书时可一次选择多个 UTF-8 Markdown/TXT 章节文件，作为一本资料保留；校验成功后默认直接发布，generation 增加。来源和许可证不是必填。管理台试搜使用与 agent 相同的 worker 实现，不会触发音箱、音乐、家电或主 thread。
+4. 停用资料后，新检索和读取应被拒绝；重启服务后仍保持停用。已进入当前会话上下文的内容不会被追溯删除。
+5. worker 心跳在 `knowledge/.runtime/worker-status.json`。管理台显示“已加载”才表示 agent 进程确认了当前 generation；“待生效/失败/未确认”不能当成已经可用。
+
+第一期限制：只导入 UTF-8 Markdown/TXT；不跟随上游自动更新，不做 PDF/EPUB/OCR、向量数据库、通用网页抓取或定时同步。图片与 PDF 完整保存但不参与全文检索，不能把“已保存”当成“已读”。

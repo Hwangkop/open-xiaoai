@@ -125,8 +125,28 @@ func writeMCP(w http.ResponseWriter, resp mcpResponse) {
 func mcpToolList() []mcpTool {
 	return []mcpTool{
 		{
+			Name: "list_books", Description: "列出可听的知识库书籍。用户说想听书但没选书、问有哪些书时先调用并简短介绍，不擅自选书。",
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
+		},
+		{
+			Name: "list_book_chapters", Description: "获取指定书的真实章节目录（不返回正文）。用户指定第一章等标题时先用本工具定位对应 chapter_id；目录第一个文件不一定是第一章。",
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{"book": map[string]any{"type": "string", "description": "list_books 返回的书籍 ID 或书名"}}, "required": []string{"book"}},
+		},
+		{
+			Name: "play_book", Description: "开始或续听书籍原文。服务直接读取知识库正文，用豆包声音分段合成、永久缓存、有限预取并自动续播，确认语播完才开始。不要输出书的正文、不要用 speak 或逐段调用工具代替听书。chapter_id 留空从书签续听，无书签从头；指定章节先查目录并传准确 ID。听书会替换当前音乐。",
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{"book": map[string]any{"type": "string"}, "chapter_id": map[string]any{"type": "string", "description": "list_book_chapters 返回的章节 ID；续听时留空"}}, "required": []string{"book"}},
+		},
+		{
+			Name: "control_book", Description: "暂停、继续、停止听书或切换相邻章节。停止保留音频和书签。服务重启后用 play_book 续听。用户在听书时说暂停/继续/下一章使用本工具，不能改用音乐或 speak 工具。",
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{"action": map[string]any{"type": "string", "enum": []string{"pause", "resume", "stop", "next_chapter", "previous_chapter"}}}, "required": []string{"action"}},
+		},
+		{
+			Name: "get_book_playback", Description: "读取实际听书状态、当前章节、分段、缓存准备状态和书签。不能凭对话记忆声称已经播放。",
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
+		},
+		{
 			Name:        "play_music",
-			Description: "在音箱上播放音乐。传 query 直接搜索并播放；或先 search_music 再传 index 播第 N 首。用户说“随便来点/随机放点/打乱”时把 shuffle 设为 true（没有指定具体某首歌时），会从搜索结果里随机挑一首起播，不会总是第一首。",
+			Description: "单次点播一首音乐。传 query 搜索并选择一首，或先 search_music 再传 index 选择第 N 个候选。只播放选中的这一首，播完回到原来的推荐/我喜欢/歌单下一首；没有原歌单则停止。搜索候选不会变成持续歌单。shuffle=true 仅随机选择一首；持续播放请用 play_playlist 或 play_daily。",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -138,7 +158,7 @@ func mcpToolList() []mcpTool {
 		},
 		{
 			Name:        "search_music",
-			Description: "只搜索不播放，返回前 5 首候选（序号/歌名/歌手）。用户说“找一下…”或需要确认时用，之后可用 play_music 的 index 播放。",
+			Description: "只搜索不播放，也不改变当前歌单，返回前 5 首候选（序号/歌名/歌手）。之后可用 play_music 的 index 单次点播选中的一首。",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -168,6 +188,60 @@ func mcpToolList() []mcpTool {
 			},
 		},
 		{
+			Name:        "search_bilibili_music",
+			Description: "搜索 B 站公开视频里的音乐音频，返回标题、UP 主、时长和 bvid。用户明确说从 B 站/Bilibili 找歌、听视频音频时使用。",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{"type": "string", "description": "歌曲名、歌手或音乐主题"},
+				},
+				"required": []string{"query"},
+			},
+		},
+		{
+			Name:        "play_bilibili_music",
+			Description: "播放用户选定的 B 站视频或分 P，也可传用户提供的视频链接。建立单项 B 站队列，播完停止，不跳回网易云。后台准备音轨，工具返回仅代表已受理，不能说已经出声；长视频可能准备较久。整个合集使用 play_bilibili_playlist。",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"bvid": map[string]any{"type": "string", "description": "BV 开头的视频 ID"},
+					"cid":  map[string]any{"type": "integer", "description": "可选，多 P 视频的分 P ID；不填使用第一 P"},
+				},
+				"required": []string{"bvid"},
+			},
+		},
+		{
+			Name:        "download_bilibili_audio",
+			Description: "把 search_bilibili_music 返回的 B 站公开视频音轨永久保存到本地音乐目录；有 Hi-Res 无损时保存 FLAC，否则保存 320kbps MP3。只有用户明确要求保存/下载时才调用。",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"bvid": map[string]any{"type": "string", "description": "BV 开头的视频 ID"},
+					"cid":  map[string]any{"type": "integer", "description": "可选，多 P 视频的分 P ID；不填使用第一 P"},
+				},
+				"required": []string{"bvid"},
+			},
+		},
+		{
+			Name:        "get_bilibili_catalog",
+			Description: "识别 B 站视频链接或 BV 号，读取所属合集和分 P 目录。合集是多个视频，分 P 是当前视频的各部分；长视频不等于单曲，没有时间点不能声称可按歌曲切换。返回分页目录元信息，不下载、不播放。",
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
+				"reference": map[string]any{"type": "string", "description": "用户提供的视频链接或 BV 号"},
+				"offset":    map[string]any{"type": "integer", "minimum": 0, "description": "目录偏移，默认 0"},
+				"limit":     map[string]any{"type": "integer", "minimum": 1, "maximum": 50, "description": "每页数量，默认 20"},
+			}, "required": []string{"reference"}},
+		},
+		{
+			Name:        "play_bilibili_playlist",
+			Description: "按用户明确要求播放 B 站完整合集或当前视频全部分 P，先用 get_bilibili_catalog 确认目录；不能因搜索命中一个视频就擅自播放所属合集。共用下一首、暂停、继续、停止控制；下一首切换视频或分 P，不保证切到长视频内的下一首歌曲。后台按项准备并缓存，未就绪前只说正在准备。",
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
+				"reference":   map[string]any{"type": "string", "description": "目录对应的视频链接或 BV 号"},
+				"kind":        map[string]any{"type": "string", "enum": []string{"collection", "parts"}},
+				"start_index": map[string]any{"type": "integer", "minimum": 1, "description": "从第几项起播，从 1 开始，默认 1"},
+				"shuffle":     map[string]any{"type": "boolean", "description": "明确要求随机播放时为 true，忽略起始序号"},
+			}, "required": []string{"reference", "kind"}},
+		},
+		{
 			Name:        "list_playlists",
 			Description: "列出网易云账号里的歌单（名称 + 歌曲数），不放。",
 			InputSchema: map[string]any{
@@ -177,11 +251,18 @@ func mcpToolList() []mcpTool {
 		},
 		{
 			Name:        "next_music",
-			Description: "播放当前歌单的下一首。",
+			Description: "推进当前来源的持续队列。B 站切换到下一视频或分 P，不跳回网易云；网易云单次点播则回到原歌单的下一首，不会顺着搜索候选播放。",
 			InputSchema: map[string]any{
 				"type":       "object",
 				"properties": map[string]any{},
 			},
+		},
+		{
+			Name:        "control_music",
+			Description: "暂停、继续、上一项或重播当前音乐队列，自动作用于当前网易云或 B 站来源。准备 B 站音轨时暂停会撤销该次起播，继续时重试当前项。听书使用 control_book。",
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
+				"action": map[string]any{"type": "string", "enum": []string{"pause", "resume", "previous", "replay"}},
+			}, "required": []string{"action"}},
 		},
 		{
 			Name:        "stop_music",
@@ -357,6 +438,8 @@ func mcpToolList() []mcpTool {
 // runMCPTool 执行工具，返回给模型看的文本。
 func (a *adminServer) runMCPTool(ctx context.Context, call mcpToolCall) (string, error) {
 	switch call.Name {
+	case "list_books", "list_book_chapters", "play_book", "control_book", "get_book_playback":
+		return a.runAudiobookTool(call)
 	case "play_music":
 		q, _ := call.Arguments["query"].(string)
 		q = strings.TrimSpace(q)
@@ -403,6 +486,107 @@ func (a *adminServer) runMCPTool(ctx context.Context, call mcpToolCall) (string,
 	case "play_daily":
 		return a.playDaily(ctx)
 
+	case "search_bilibili_music":
+		if a.bilibili == nil {
+			return "", fmt.Errorf("B 站音乐未启用")
+		}
+		q, _ := call.Arguments["query"].(string)
+		q = strings.TrimSpace(q)
+		if q == "" {
+			return "", fmt.Errorf("query 不能为空")
+		}
+		items, err := a.bilibili.search(ctx, q)
+		if err != nil {
+			return "", err
+		}
+		if len(items) == 0 {
+			return "B 站没有搜到匹配视频", nil
+		}
+		var b strings.Builder
+		for i, item := range items {
+			if i >= 5 {
+				break
+			}
+			recommended := ""
+			if i == 0 {
+				recommended = "，推荐"
+			}
+			fmt.Fprintf(&b, "%d. %s - %s（%s，%s%s）\n", i+1, item.Title, item.Author, item.Duration, item.BVID, recommended)
+		}
+		return strings.TrimSpace(b.String()), nil
+
+	case "play_bilibili_music":
+		if a.bilibili == nil {
+			return "", fmt.Errorf("B 站音乐未启用")
+		}
+		bvid, _ := call.Arguments["bvid"].(string)
+		bvid = strings.TrimSpace(bvid)
+		cid := int64(0)
+		if value, ok := numArg(call.Arguments["cid"]); ok {
+			cid = int64(value)
+		}
+		return a.playBilibiliVideo(ctx, bvid, cid)
+
+	case "get_bilibili_catalog":
+		if a.bilibili == nil {
+			return "", fmt.Errorf("B 站音乐未启用")
+		}
+		reference, _ := call.Arguments["reference"].(string)
+		catalog, err := a.bilibili.catalog(ctx, reference)
+		if err != nil {
+			return "", err
+		}
+		offset, limit := 0, 20
+		if n, ok := numArg(call.Arguments["offset"]); ok {
+			offset = int(n)
+		}
+		if n, ok := numArg(call.Arguments["limit"]); ok {
+			limit = int(n)
+		}
+		if offset < 0 || limit < 1 || limit > 50 {
+			return "", fmt.Errorf("目录分页参数无效")
+		}
+		clip := func(items []bilibiliCatalogItem) []bilibiliCatalogItem {
+			start := min(offset, len(items))
+			return items[start:min(start+limit, len(items))]
+		}
+		out := map[string]any{"video": catalog.Video, "selected_cid": catalog.SelectedCID, "parts_total": len(catalog.Parts), "parts": clip(catalog.Parts), "offset": offset, "limit": limit}
+		if c := catalog.Collection; c != nil {
+			out["collection"] = map[string]any{"id": c.ID, "title": c.Title, "total": c.Total, "items": clip(c.Items)}
+		}
+		data, err := json.Marshal(out)
+		return string(data), err
+
+	case "play_bilibili_playlist":
+		reference, _ := call.Arguments["reference"].(string)
+		kind, _ := call.Arguments["kind"].(string)
+		index := 1
+		if n, ok := numArg(call.Arguments["start_index"]); ok {
+			index = int(n)
+		}
+		shuffle, _ := call.Arguments["shuffle"].(bool)
+		return a.playBilibiliPlaylist(ctx, reference, kind, index-1, shuffle)
+
+	case "download_bilibili_audio":
+		if a.bilibili == nil {
+			return "", fmt.Errorf("B 站音乐未启用")
+		}
+		bvid, _ := call.Arguments["bvid"].(string)
+		bvid = strings.TrimSpace(bvid)
+		cid := int64(0)
+		if value, ok := numArg(call.Arguments["cid"]); ok {
+			cid = int64(value)
+		}
+		cached, err := a.bilibili.prepare(ctx, bvid, cid)
+		if err != nil {
+			return "", err
+		}
+		_, savedName, err := a.bilibili.saveToMusic(cached)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("已永久保存《%s》到音乐目录：%s", cached.Video.Title, savedName), nil
+
 	case "list_playlists":
 		client := a.neteaseClient()
 		acc, err := client.GetAccount(ctx)
@@ -421,6 +605,17 @@ func (a *adminServer) runMCPTool(ctx context.Context, call mcpToolCall) (string,
 
 	case "next_music":
 		return a.nextMusic(ctx)
+	case "control_music":
+		action, _ := call.Arguments["action"].(string)
+		switch action {
+		case "pause", "resume", "previous", "replay":
+		default:
+			return "", fmt.Errorf("不支持的音乐控制")
+		}
+		if err := a.controlQueuedMusic(ctx, action, nil); err != nil {
+			return "", err
+		}
+		return "音乐控制指令已执行。", nil
 
 	case "stop_music":
 		if a.stopPlayback == nil {

@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "generation": 2,
+  "updated_at": "2026-11-03T07:34:48Z",
+  "sources": [
+    {
+      "id": "time-as-a-friend",
+      "name": "把时间当作朋友",
+      "author": "李笑来",
+      "kind": "book",
+      "description": "作者公开的第三版完整原书。用于按需核对时间管理、学习、思考和沟通方法。",
+      "topics": [
+        "时间管理",
+        "学习",
+        "思考",
+        "沟通"
+      ],
+      "use_cases": [
+        "用户明确求助时间安排、学习卡点或沟通方法",
+        "用户要求核对书中方法、出处或原话"
+      ],
+      "avoid": [
+        "普通闲聊和倾诉",
+        "把书中个人经验当成医疗建议",
+        "未读原文就复述练习步骤"
+      ],
+      "enabled": true,
+      "published_version": "third-edition-ba8305dc",
+      "created_at": "2026-11-03T00:00:00Z",
+      "updated_at": "2026-11-03T00:00:00Z",
+      "versions": [
+        {
+          "id": "third-edition-ba8305dc",
+          "label": "第三版",
+          "status": "ready",
+          "manifest": "books/time-as-a-friend/source.json",
+          "content_root": "books/time-as-a-friend/original",
+          "revision": "ba8305dc38a1868b78acf44136d1a0d3bf5d0af2",
+          "repository": "https://github.com/xiaolai/time-as-a-friend",
+          "license": "CC BY-NC-ND 3.0 US",
+          "published_at": "2026-11-03T00:00:00Z",
+          "created_at": "2026-11-03T00:00:00Z"
+        }
+      ]
+    },
+    {
+      "id": "public-speaking-with-meaning",
+      "name": "我也有话要说：普通人的当众讲话技能",
+      "author": "李笑来",
+      "kind": "book",
+      "description": "关于普通人准备当众讲话、建立信任、组织表达和处理紧张的系列文章。",
+      "topics": [
+        "当众讲话",
+        "演讲",
+        "表达",
+        "沟通",
+        "紧张"
+      ],
+      "use_cases": [
+        "准备演讲或当众发言",
+        "表达不清楚或听众容易误解",
+        "需要开场、结构、停顿和互动方法"
+      ],
+      "avoid": [
+        "不用技巧操控或欺骗听众",
+        "不把模板替代真实表达",
+        "不保证克服所有紧张"
+      ],
+      "enabled": true,
+      "published_version": "public-b77a015bfa4c",
+      "created_at": "2026-11-03T07:34:48Z",
+      "updated_at": "2026-11-03T07:34:48Z",
+      "versions": [
+        {
+          "id": "public-b77a015bfa4c",
+          "label": "公开整理版",
+          "status": "ready",
+          "manifest": "books/public-speaking-with-meaning/source.json",
+          "content_root": "books/public-speaking-with-meaning/original",
+          "revision": "b77a015bfa4c023c8f214bbe218a91b9bdbdb5d9",
+          "repository": "https://github.com/xiaolai/public-speaking-with-meaning",
+          "license": "",
+          "published_at": "2026-11-03T07:34:48Z",
+          "created_at": "2026-11-03T07:34:48Z"
+        }
+      ]
+    },
+    {
+      "id": "the-craft-of-selfteaching",
+      "name": "自学是门手艺",
+      "author": "李笑来",
+      "kind": "book",
+      "description": "关于自学能力、阅读、练习、编程入门、思考和沟通的系统性公开书稿。",
+      "topics": [
+        "自学",
+        "学习方法",
+        "阅读",
+        "刻意练习",
+        "编程入门",
+        "思考"
+      ],
+      "use_cases": [
+        "不知道怎么开始自学",
+        "学习卡住、进展慢或注意力漂移",
+        "需要阅读、练习和编程入门方法"
+      ],
+      "avoid": [
+        "不把编程当成唯一学习路径",
+        "不跳过基础直接追求速成",
+        "不把书中个人经验当成能力保证"
+      ],
+      "enabled": true,
+      "published_version": "public-987a8e8a9ce2",
+      "created_at": "2026-11-03T07:34:48Z",
+      "updated_at": "2026-11-03T07:34:48Z",
+      "versions": [
+        {
+          "id": "public-987a8e8a9ce2",
+          "label": "Markdown 版",
+          "status": "ready",
+          "manifest": "books/the-craft-of-selfteaching/source.json",
+          "content_root": "books/the-craft-of-selfteaching/original",
+          "revision": "987a8e8a9ce205b63886510e145437d14d8a13a4",
+          "repository": "https://github.com/xiaolai/the-craft-of-selfteaching",
+          "license": "CC BY-NC-ND 3.0",
+          "published_at": "2026-11-03T07:34:48Z",
+          "created_at": "2026-11-03T07:34:48Z"
+        }
+      ]
+    },
+    {
+      "id": "regular-investing-in-box",
+      "name": "定投改变命运（第三版）",
+      "author": "李笑来",
+      "kind": "book",
+      "description": "关于长期定投、投资心理、趋势与风险边界的公开书稿。只作为参考资料，不构成投资建议。",
+      "topics": [
+        "定投",
+        "长期投资",
+        "投资心理",
+        "风险",
+        "周期"
+      ],
+      "use_cases": [
+        "用户主动询问长期定投或投资心理",
+        "需要核对书中概念、原则或风险说明"
+      ],
+      "avoid": [
+        "不构成投资建议或收益保证",
+        "不推荐借贷、梭哈或超出承受能力的投资",
+        "不替代持牌专业意见"
+      ],
+      "enabled": true,
+      "published_version": "public-c125a7925277",
+      "created_at": "2026-11-03T07:34:48Z",
+      "updated_at": "2026-11-03T07:34:48Z",
+      "versions": [
+        {
+          "id": "public-c125a7925277",
+          "label": "第三版",
+          "status": "ready",
+          "manifest": "books/regular-investing-in-box/source.json",
+          "content_root": "books/regular-investing-in-box/original",
+          "revision": "c125a792527721f6838ca1d72eef6d59a6435f0c",
+          "repository": "https://github.com/xiaolai/regular-investing-in-box",
+          "license": "CC BY-NC-ND 3.0",
+          "published_at": "2026-11-03T07:34:48Z",
+          "created_at": "2026-11-03T07:34:48Z"
+        }
+      ]
+    }
+  ]
+}

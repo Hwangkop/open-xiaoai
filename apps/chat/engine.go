@@ -29,9 +29,12 @@ type Engine struct {
 	// doubaoWeb 非空且已登录时，优先走豆包网页直连（不经过 openai 客户端）
 	doubaoWeb *DoubaoWeb
 
-	mu         sync.Mutex
-	cancelFunc context.CancelFunc
-	lastMsgTS  int64
+	mu          sync.Mutex
+	cancelFunc  context.CancelFunc
+	lastMsgTS   int64
+	messageMu   sync.Mutex        // 串行接收新消息，保证补充与新轮启动顺序一致。
+	voiceInputs *voiceInputQueue  // mu 保护指针；队列自身保护出声前补充。
+	audiobooks  *audiobookService // 正文由独立听书服务播放；对话只负责暂时让出媒体。
 
 	// 同一句话可能同时被小爱 ASR 和本地上行 ASR 听到，去重避免问豆包两次
 	turnMu   sync.Mutex
@@ -57,7 +60,8 @@ type Engine struct {
 	nativeChain atomic.Int32
 	// turnSeq 回复轮次。旧轮次被新轮次打断后，旧协程不能再去解冻/续听，
 	// 否则会把新轮次的接管提前结束，让小爱 TTS 漏出来。
-	turnSeq atomic.Uint64
+	turnSeq      atomic.Uint64
+	activeDialog atomic.Uint64 // 整轮思考与播报结束前，后台音乐不能因句间空隙提前起播。
 
 	// codex 非空且 provider=codex 时，走 Codex CLI（一次性 exec）
 	codex *CodexClient
@@ -65,8 +69,9 @@ type Engine struct {
 	codexServer *CodexAppServer
 
 	// 音乐态下的语音控制（由 runtime 注入到管理端实现）
-	musicNext func(context.Context) (string, error)
-	musicStop func()
+	musicNext    func(context.Context) (string, error)
+	musicStop    func()
+	musicControl func(context.Context, string) error
 
 	// 音乐态语义路由的依赖（由管理端注入）
 	musicDesc      func() (song, artists string, volume int)
@@ -356,13 +361,20 @@ func (e *Engine) onUtterance(text string, asr UtteranceASR) {
 	}
 	cfg := e.Config()
 
-	// 原生唤醒接管进行中：这段话已经由小爱 ASR 交给主助手，本地这路不要再问一遍
-	if e.speaker.TakeoverActive() {
+	matched := e.matchWake(text, cfg)
+	listening := e.voiceContinuationListening()
+	// 书的正文没有歌词时间轴；播放中无唤醒词的本地识别不能当作新指令。
+	// 原生“小爱同学”的 final 走独立入口，不受这个自回声保护影响。
+	if e.audiobooks != nil && e.audiobooks.reading() && !matched {
+		return
+	}
+	// 接管中的本地识别默认仍隔离；无音乐、尚未播报时允许真实补充，双路重复由 claimTurn 去重。
+	// 音乐态没有干净的 AEC 信号，无唤醒词的文本仍可能是歌词，保留原来的保护。
+	if e.speaker.TakeoverActive() && !(listening && (matched || !e.speaker.MusicPlaying())) {
 		log.Printf("🔇 [PC ASR] 接管中，忽略本地上行识别: %q", text)
 		return
 	}
 
-	matched := e.matchWake(text, cfg)
 	wakeRest := ""
 	if matched {
 		// 这句要去对话或路由了，灯在这一刻点亮（比"开始思考"早，覆盖识别后的处理阶段）
@@ -374,6 +386,11 @@ func (e *Engine) onUtterance(text string, asr UtteranceASR) {
 	// 环境沙沙声经常被 ASR 转成这种碎片，送进豆包只会污染对话。
 	if !matched && len([]rune(stripPunct(text))) < 2 {
 		log.Printf("🔕 [PC ASR] 文本过短，丢弃: %q", text)
+		return
+	}
+	if listening && !e.speaker.MusicPlaying() {
+		log.Printf("💬 [PC ASR] 回答出声前收到后续输入")
+		e.handleDialogTurn(text, matched, asr)
 		return
 	}
 
@@ -847,6 +864,9 @@ func instructionLineFromEventData(data []byte) string {
 // InterruptOnly 仅打断当前 AI 回复，不处理新消息（用于 kws 事件）
 func (e *Engine) InterruptOnly() {
 	e.mu.Lock()
+	if e.voiceInputs != nil {
+		e.voiceInputs.close()
+	}
 	if e.cancelFunc != nil {
 		e.cancelFunc()
 		e.cancelFunc = nil
@@ -863,16 +883,42 @@ func (e *Engine) OnMessage(text string) { e.startMessage(text, false) }
 func (e *Engine) OnMessageAuthorized(text string) { e.startMessage(text, true) }
 
 func (e *Engine) startMessage(text string, authorized bool) {
+	e.messageMu.Lock()
+	defer e.messageMu.Unlock()
+	cfg := e.Config()
+	if isVoiceStopRequest(text, cfg) {
+		e.InterruptOnly()
+		return
+	}
+	e.mu.Lock()
+	inputs := e.voiceInputs
+	if inputs != nil && !cfg.hasCustomReply(text) && (authorized || cfg.callAIKeyword(text) != "") && inputs.append(text) {
+		e.lastMsgTS = time.Now().UnixMilli()
+		e.addHistory("user", text)
+		e.mu.Unlock()
+		log.Printf("💬 [语音补充] 已保存后续输入，等待 Codex 应用")
+		return
+	}
+	e.mu.Unlock()
 	// Cancel any previous AI call / TTS in progress.
 	e.mu.Lock()
 	if e.cancelFunc != nil {
 		e.cancelFunc()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	inputs = nil
+	if cfg.Chat.UseCodex() && e.codexServer != nil && !cfg.hasCustomReply(text) && (authorized || cfg.callAIKeyword(text) != "") {
+		inputs = newVoiceInputQueue(ctx)
+		ctx = context.WithValue(ctx, voiceInputContextKey{}, inputs)
+		e.addHistory("user", text)
+	}
+	e.voiceInputs = inputs
 	e.cancelFunc = cancel
 	e.lastMsgTS = time.Now().UnixMilli()
 	e.mu.Unlock()
 	turnID := e.turnSeq.Add(1)
+	e.activeDialog.Store(turnID)
+	e.audiobooks.beginDialog(turnID)
 
 	stopTTS := func() {
 		// 停掉小爱自己的回复：noop 采集模式下固件的 ASR 和原生回复是同一套流程，
@@ -901,7 +947,14 @@ func (e *Engine) startMessage(text string, authorized bool) {
 	}
 	takeoverEpoch := e.speaker.TakeoverEpoch()
 	go func() {
+		defer e.activeDialog.CompareAndSwap(turnID, 0)
+		defer e.audiobooks.endDialog(turnID)
+		if inputs != nil {
+			defer inputs.close()
+		}
+		ctx, closeDuckReply := e.speaker.WithTTSDuckReply(ctx)
 		e.handleMessage(ctx, text, authorized)
+		closeDuckReply()
 		// 已经被更新的轮次接管：收尾（解冻/续听）交给新轮次，老的不能插手。
 		if e.turnSeq.Load() != turnID {
 			log.Printf("⏭️ 旧轮次收尾跳过（turn %d 已被新轮次接管）", turnID)
@@ -938,6 +991,10 @@ func (e *Engine) startMessage(text string, authorized bool) {
 // 原生续听会再次打开麦克风并可能暂停播放器，不能在刚恢复音乐后立即重开。
 func (e *Engine) continueNativeAfterReply(ctx context.Context, turnID uint64) {
 	if ctx.Err() != nil || e.turnSeq.Load() != turnID {
+		return
+	}
+	if e.audiobooks != nil && e.audiobooks.active() {
+		e.nativeChain.Store(0)
 		return
 	}
 	if e.speaker.MusicPlaying() {
@@ -980,7 +1037,7 @@ func (e *Engine) handleMessage(ctx context.Context, text string, authorized bool
 				e.speaker.PlayURL(r.URL, false)
 			} else if r.Text != "" {
 				log.Printf("🔊 自定义回复: %s", r.Text)
-				e.speaker.PlayTTS(r.Text, false)
+				e.playTTS(ctx, r.Text, "")
 			}
 			return
 		}
@@ -998,7 +1055,9 @@ func (e *Engine) handleMessage(ctx context.Context, text string, authorized bool
 	log.Printf("🤖 准备调用 AI: keyword=%q model=%s text=%q", callAIKeyword, cfg.GetLLM().Model, text)
 
 	// 3. Stream from OpenAI → sentence-by-sentence TTS
-	e.addHistory("user", text)
+	if voiceInputsFromContext(ctx) == nil {
+		e.addHistory("user", text)
+	}
 
 	// 思考态：点亮播放灯，第一句 TTS 出声前熄灭
 	e.speaker.ShowThinkingLED()
@@ -1021,7 +1080,7 @@ func (e *Engine) handleMessage(ctx context.Context, text string, authorized bool
 		if msg == "" {
 			msg = "出错了，请稍后再试吧！"
 		}
-		e.speaker.PlayTTS(msg, true)
+		e.playTTS(ctx, msg, "")
 		return
 	}
 
@@ -1151,10 +1210,16 @@ func (e *Engine) streamAndPlay(ctx context.Context, userText string) (reply stri
 // streamAndPlayOn 同 streamAndPlay；forcePlain=true 时跳过 codex，直接走直连模型
 // （codex 挂掉/超时时的降级路径）。
 func (e *Engine) streamAndPlayOn(ctx context.Context, userText string, forcePlain bool) (reply string, err error) {
+	cfg := e.Config()
+	inputs := voiceInputsFromContext(ctx)
+	speechRevision := uint64(1)
+	if inputs != nil && (forcePlain || !cfg.Chat.UseCodex() || e.codexServer == nil) {
+		// Codex 失败后的直连降级使用已保存的全部用户输入，不继续接收本轮追加。
+		inputs.close()
+		speechRevision = inputs.latest()
+	}
 	messages := e.buildMessages(userText)
 	log.Printf("🤖 调用 AI 中: messages=%d", len(messages))
-
-	cfg := e.Config()
 
 	var stream aiStream
 	if !forcePlain && cfg.Chat.UseCodex() && e.codexServer != nil {
@@ -1197,8 +1262,7 @@ func (e *Engine) streamAndPlayOn(ctx context.Context, userText string, forcePlai
 	}
 	defer stream.Close()
 
-	// 本轮回复播完之后再开始放歌（MCP 点歌只是排队）；
-	// 被打断或出错就取消，别让下一轮莫名其妙响起音乐。
+	// 兼容遗留待播入口；音乐工具直接起播，不依赖本轮对话是否成功收尾。
 	defer func() {
 		if err != nil || ctx.Err() != nil {
 			e.speaker.ClearPendingMusic()
@@ -1224,116 +1288,58 @@ func (e *Engine) streamAndPlayOn(ctx context.Context, userText string, forcePlai
 		return e.playTTS(ctx, sentence, emotion)
 	}
 
-	var fullReply strings.Builder
-	var sentenceBuf strings.Builder
-	// prefixPlayed 确保 ReplyPrefix 在整段 AI 回复里只播一次。
-	// 必须在 LLM 第一个 token 到达后才播——否则等不到 token 就报 prefix 会让用户听到"AI回复...
-	// 然后才是真正的错误提示"，更怪。
+	// 前缀只播一次；进度与答案共用同一条流水线，保证顺序并复用打断机制。
 	prefixPlayed := false
-	// 模型一般只在开头标一次情绪，后面沿用；标记变了就切
-	curEmotion := ""
-
-	for {
-		// 主动检查 ctx 取消：用户说"闭嘴"等打断词时，InterruptOnly 会 cancelFunc()，
-		// 这里在每次 stream.Recv 前先看一眼，能尽快退出循环，不再消费已 buffer 的 token、
-		// 也不再合成新句子。如果只依赖 stream.Recv 自己感知 ctx 取消，buffered token 会被处理完,
-		// 表现为"我说了闭嘴，AI 还又输出了 1-2 句话"。
+	textStream := &agentSpeechText{speak: func(sentence, emotion string, progress bool) error {
 		if ctx.Err() != nil {
-			return fullReply.String(), ctx.Err()
+			return ctx.Err()
 		}
-
-		resp, err := stream.Recv()
-		if errors.Is(err, io.EOF) {
-			// Flush remaining text
-			if sentenceBuf.Len() > 0 {
-				sentence, tag := splitEmotionTag(trimForSpeech(sentenceBuf.String()))
-				if tag != "" {
-					curEmotion = tag
-				}
-				emotion := curEmotion
-				if sentence == "" {
-					break
-				}
-				if emotion != "" {
-					log.Printf("AI[%s]: %s", emotion, sentence)
-				} else {
-					log.Printf("AI: %s", sentence)
-				}
-				if hasSpeakableContent(sentence) {
-					if playErr := e.playReplyPrefixOnce(ctx, &prefixPlayed); playErr != nil {
-						return fullReply.String(), playErr
-					}
-					if playErr := speak(sentence, emotion); playErr != nil {
-						return fullReply.String(), playErr
-					}
-				}
+		if inputs != nil && !inputs.beginSpeech(speechRevision) {
+			return nil
+		}
+		if progress {
+			log.Printf("🗣️ [任务进度] %s", sentence)
+		} else if emotion != "" {
+			log.Printf("AI[%s]: %s", emotion, sentence)
+		} else {
+			log.Printf("AI: %s", sentence)
+		}
+		if err := e.playReplyPrefixOnce(ctx, &prefixPlayed); err != nil {
+			return err
+		}
+		return speak(sentence, emotion)
+	}}
+	for {
+		if ctx.Err() != nil {
+			return textStream.reply.String(), ctx.Err()
+		}
+		event, recvErr := recvAgentText(stream)
+		if errors.Is(recvErr, io.EOF) {
+			if err := textStream.flush(); err != nil {
+				return textStream.reply.String(), err
 			}
 			if pipe != nil {
-				pipe.Close() // 等剩下的句子播完
+				pipe.Close()
 			}
 			break
 		}
-		if err != nil {
-			// ctx 取消导致的 stream 错误：当成正常打断退出，不再补一句 errMsg TTS
+		if recvErr != nil {
 			if ctx.Err() != nil {
-				return fullReply.String(), ctx.Err()
+				return textStream.reply.String(), ctx.Err()
 			}
-			return fullReply.String(), fmt.Errorf("stream recv: %w", err)
+			return textStream.reply.String(), fmt.Errorf("stream recv: %w", recvErr)
 		}
-
-		if len(resp.Choices) == 0 {
-			continue
+		if inputs != nil && event.Revision != 0 {
+			if !inputs.current(event.Revision) {
+				continue
+			}
+			speechRevision = event.Revision
 		}
-		token := resp.Choices[0].Delta.Content
-		if token == "" {
-			continue
-		}
-
-		fullReply.WriteString(token)
-		sentenceBuf.WriteString(token)
-
-		// 只按标点断句（逗号、字数阈值都不要）：切得太碎语调会很不自然。
-		for {
-			head, rest, ok := splitAtFirstEnd(sentenceBuf.String())
-			if !ok {
-				break
-			}
-			sentenceBuf.Reset()
-			sentenceBuf.WriteString(rest)
-			if ctx.Err() != nil {
-				return fullReply.String(), ctx.Err()
-			}
-			sentence, tag := splitEmotionTag(trimForSpeech(head))
-			if tag != "" {
-				curEmotion = tag // 模型通常只标第一句，后面沿用
-			}
-			emotion := curEmotion
-			if sentence == "" {
-				break // 整句只是个标记
-			}
-			// 太短的片段（"1"、"国内"）不单独合成，塞回缓冲等下一句
-			if len([]rune(sentence)) < 4 {
-				sentenceBuf.Reset()
-				sentenceBuf.WriteString(trimForSpeech(head) + rest)
-				break
-			}
-			if emotion != "" {
-				log.Printf("AI[%s]: %s", emotion, sentence)
-			} else {
-				log.Printf("AI: %s", sentence)
-			}
-			if hasSpeakableContent(sentence) {
-				if playErr := e.playReplyPrefixOnce(ctx, &prefixPlayed); playErr != nil {
-					return fullReply.String(), playErr
-				}
-				if playErr := speak(sentence, emotion); playErr != nil {
-					return fullReply.String(), playErr
-				}
-			}
+		if err := textStream.add(event); err != nil {
+			return textStream.reply.String(), err
 		}
 	}
-
-	return fullReply.String(), nil
+	return textStream.reply.String(), nil
 }
 
 // playReplyPrefixOnce 在整段 AI 回复的第一次 TTS 出口前，播一次 ReplyPrefix。
@@ -1370,7 +1376,7 @@ func (e *Engine) playTTS(ctx context.Context, text, emotion string) error {
 	// This matches the behavior in the original config.ts.
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- e.speaker.PlayTTSVoice(text, true, emotion)
+		errCh <- e.speaker.PlayTTSVoiceContext(ctx, text, true, emotion)
 	}()
 
 	select {
@@ -1544,6 +1550,18 @@ func matchMusicCommand(text string) (string, bool) {
 
 // execMusicCommand 执行匹配到的指令（副作用都在这边）。
 func (e *Engine) execMusicCommand(action, text string) {
+	if e.audiobooks != nil && e.audiobooks.active() && (action == "stop" || action == "next") {
+		bookAction := "stop"
+		if action == "next" {
+			bookAction = "next_chapter"
+		} else if containsAnyRune(stripPunct(text), "暂停", "停一下") {
+			bookAction = "pause"
+		}
+		if _, err := e.audiobooks.control(bookAction); err != nil {
+			log.Printf("⚠️ [听书] 控制失败：%v", err)
+		}
+		return
+	}
 	switch action {
 	case "next":
 		if e.musicNext == nil {
@@ -1560,6 +1578,14 @@ func (e *Engine) execMusicCommand(action, text string) {
 			}
 		}()
 	case "stop":
+		if e.musicControl != nil && containsAnyRune(stripPunct(text), "暂停", "停一下") {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := e.musicControl(ctx, "pause"); err != nil {
+				log.Printf("⚠️ 音乐暂停失败：%v", err)
+			}
+			return
+		}
 		if e.musicStop == nil {
 			return
 		}

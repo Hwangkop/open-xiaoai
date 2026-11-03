@@ -52,6 +52,7 @@ tts:
 ```
 
 - **音量独立**：`notifyvol` 调整 notify 通道，音乐使用 mediaplayer 音量；`mysoftvol` 会影响音乐，保持固定。其他使用 notify PCM 的提示音也可能随 notifyvol 改变。
+- **播报期间压低音乐（默认关闭，待真机试听）**：设置 `tts.music_duck.enabled: true`，`tts.music_duck.percent: 50`。仅用于 WAV/notify：例如音乐音量 20 → 豆包开播时 10 → 整轮回答结束 20，思考期间保持原音量，多句间不反复升降。手动调音乐音量/静音优先；不会操作音乐的暂停、播放或进度。与贯穿整段放歌的顶层 `music_duck` 分别保存原值。比例指音量数值，不保证等同于听感响度比例。
 - **避免重复恢复**：播放器已是播放状态时直接继续，不重复发 play、重拉 URL 或 seek；音乐态回答结束后不自动重开原生收音。
 - **开机自动加载**：`/data/init.sh → boot.sh → init.sh` 在 client 连接前校验固件和载荷、重建临时挂载。显式 enable 后重启自动恢复；加载失败关闭持久开关并继续兼容启动。安装、状态检查和 disable 回滚见 [原生指令隔离说明](tools/native-guard/README.md)。
 - **原生分流**：命中 `native_keywords` 的文本不被钩子认领；自定义家电工具统一走 Home Assistant，避免原生与自定义动作重复执行。
@@ -61,6 +62,14 @@ tts:
 使用边界：目前只适配上述固件及其 SDK 指纹；默认接管关闭、隔离方式为 freeze。钩子缺失或本轮未认领时使用冻结 aivs 的兼容路径，该路径不保证零漏音或音乐全程共存。本方案过滤本地下行动作，ASR/NLP 请求仍会上云，不能保证小米云不生成 TTS；固件唤醒提示音也不在本轮回答过滤范围内。
 
 参考 [open-speaker-llm/xiaomi_ai_llm](https://github.com/open-speaker-llm/xiaomi_ai_llm) 的原生 ASR 与 SDK 钩子思路，已保留 MIT 许可；当前固件的适配代码和独立测试位于 [tools/native-guard](tools/native-guard/README.md)。逆向过程与失败方案见 [音频链路与原生 ASR](docs/device-audio-aec-native-asr.md)，部署与回滚见 [部署指南](docs/deploy.md)。
+
+## Agent 本地知识库
+
+当前收录《把时间当作朋友》《我也有话要说》《自学是门手艺》《定投改变命运》四本李笑来公开书稿，来源固定到具体提交。管理台 `/ui/#knowledge` 用紧凑书架管理多本书，一本书可包含多个 Markdown/TXT 文件；支持自动发布、回滚、启停和检索试验。个人资料不要求来源或许可证。agent 通过同一套只读 worker 按需检索章节并读取原文，将适合的方法自然融入聊天，不把闲聊或倾诉变成课程。这是运行时查资料，不是训练模型；安装、Worker 配置、状态确认和第一期边界见 [知识库说明](knowledge/README.md)。
+
+## B 站音乐
+
+管理台 `/ui/#bilibili` 可以搜索 B 站公开视频，自动推荐更可能是单曲和高音质的候选，提取最高可用音轨并在音箱播放或永久保存：有 Hi-Res 无损时保存 FLAC，否则保存 320kbps MP3；「应用管理」支持 Bilibili 扫码登录。项目使用本机 ffmpeg 转换音频，不引入 Docker 或其他常驻服务；只处理公开可访问内容，保存任务由用户主动触发。
 
 ## 项目结构
 

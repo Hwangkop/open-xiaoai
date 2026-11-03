@@ -1,0 +1,14 @@
+{
+  "title": "定投改变命运（第三版）",
+  "author": "李笑来",
+  "edition": "第三版",
+  "repository": "https://github.com/xiaolai/regular-investing-in-box",
+  "revision": "c125a792527721f6838ca1d72eef6d59a6435f0c",
+  "license": "CC BY-NC-ND 3.0",
+  "files": {
+    "docs/cn/README.md": {
+      "bytes": 218341,
+      "git_blob_sha1": "be6933f70aac5b28c2b9d74e44856b77a4137e66"
+    }
+  }
+}

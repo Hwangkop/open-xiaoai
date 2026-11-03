@@ -1,0 +1,2414 @@
+{
+  "version": "v11",
+  "date": "2026-11-03",
+  "harness": "实际 Windows Codex app-server + DeepSeek + 已部署知识库 MCP；ephemeral 独立会话",
+  "prompt_sha256": "73e8538da804e12e67f5753e10c89a6ab4d69572c3c0bc0f3e126feeb710b1fd",
+  "controls": {
+    "business_mcp_disabled": true,
+    "speaker_playback_triggered": false,
+    "main_thread_used_for_probes": false,
+    "subprocess_cleanup": "只清理每次探针启动的 app-server 进程树"
+  },
+  "assessment": {
+    "confirmed": [
+      "拒绝方法后能够在后续含糊倾诉中停止推送记录与清单",
+      "新会话不编造上次练习安排",
+      "明确求方法时实际 search_book 后 read_book_section，能使用时间、学习与当众表达资料",
+      "原书两周练习在修订全量轮回答准确，没有给第一周增加耗时要求",
+      "出处追问能区分原书核心与自己的转化",
+      "故事不强行附学习总结，换成笑话或要求一句时能跟随",
+      "发布版本报告反馈能承接已有进展，不重复读取已经读到的片段",
+      "发布版本临时需求建议改为核实期限，而非仅按是否相关排优先级"
+    ],
+    "limits": [
+      "这是人工逐条审阅的抽样，没有自动裁判或通过率保证，也没有验证真实习惯改变",
+      "初稿并行24回合中有1次生成超时，另外2次超过20秒；后续改为顺序验证，不能据此归因或宣称已修复网络/模型延迟",
+      "修订全量轮有24次完成，耗时与模型负载有关，不等于真实音箱首声延迟",
+      "发布版本仅对3组8回合做最终针对性复核；另外9组由前序修订轮覆盖，不能称最终版12组全部复测",
+      "儿童回答仍有将无进步解释为积累的泛化倾向；提示词不足以保证每次解释或个性化建议可靠",
+      "部分回答仍超过一到三句，或附加邀请/额外动作，不能声称完全消除说教",
+      "检索偶尔命中无关编程章节，模型可重搜；本次未改检索排序",
+      "没有新增独立长期学习记忆；承接仅依据当前可见会话"
+    ]
+  },
+  "phases": [
+    {
+      "phase": "初稿",
+      "case_count": 12,
+      "turn_count": 24,
+      "completed": 23,
+      "errors": 1,
+      "median_ms": 2709,
+      "max_ms": 52436,
+      "results": [
+        {
+          "id": "start-and-transfer",
+          "expect": [
+            "第一轮真实检索并读取，转成一个小动作，不布置整套计划",
+            "第二轮承接具体进展，不自动加码，不重复查同一片段",
+            "第三轮解释可迁移的方法，保留用户选择权"
+          ],
+          "responses": [
+            {
+              "input": "报告明天交，我一想到整篇就不想开始，你陪我想想怎么动手。",
+              "output": "[平静]先不写整篇，只打开文档列个骨架：这份报告要说清什么问题、中间两三个要点、最后什么结论，各用一句话。写完这三行就算开工，剩下的再一块块填。它是工作汇报还是课程作业？",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "任务太大不想开始 拖延 拆步骤 五分钟起步",
+                    "limit": 5
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:46",
+                      "section": "第三章：管理 / 2. 及时行动",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:99",
+                      "section": "第三章：管理 / 4. 关注步骤",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:163",
+                      "section": "第三章：管理 / 5. 并行串行",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter7:440",
+                      "section": "第七章：应用 / 10. 效率",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:497",
+                      "section": "第三章：管理 / 有些时候没必要做计划",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:99",
+                    "max_chars": 4000
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:99",
+                      "section": "第三章：管理 / 4. 关注步骤",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 35635
+            },
+            {
+              "input": "我先写了三个要点，现在开头写出来了。",
+              "output": "[开心]开头出来了，这一步挺关键，你把“整篇”缩成了骨架，现在又能顺着开头往下接。接下来挑最有把握的那个要点展开就行，不用一口气冲完。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 2709
+            },
+            {
+              "input": "那下一次遇到这种事，我怎么自己用这个办法？",
+              "output": "[平静]下次一发现自己盯着“整篇”发呆，就先停下来问：这份东西最少要讲清哪三件事？把答案写成三行，再从最不费劲的那行开始写。记住这一个动作就够了，核心就是把模糊的大任务缩小到“现在能写出一句话”。真卡住了就喊我，咱再把第一步切小一点。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 52436
+            }
+          ]
+        },
+        {
+          "id": "failed-attempt",
+          "expect": [
+            "查适用资料并给一个起点",
+            "根据新反馈调整，允许急事改变计划，不责怪没坚持",
+            "确认用户自己的判断，不再叠加练习"
+          ],
+          "responses": [
+            {
+              "input": "一做报告就想改计划，越改越乱，帮我想个办法。",
+              "output": "[平静]很可能不是计划本身有问题，是你还没动手，里面的内容全是猜的，所以越猜越乱。今天先别改计划，定个十五分钟，把报告开头三句话或者一页提纲写出来；冒出来的新想法先记在一边，不马上动计划。写完再回头看，哪里真卡住了再改。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "做报告 反复修改计划 越改越乱 先行动 计划",
+                    "limit": 5
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:448",
+                      "section": "第三章：管理 / 计划成功的前提：目标现实可行",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:497",
+                      "section": "第三章：管理 / 有些时候没必要做计划",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:219",
+                      "section": "第三章：管理 / 6. 感知时间",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:442",
+                      "section": "第三章：管理 / 9. 计划",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:471",
+                      "section": "第三章：管理 / 长期计划是需要通过实践才能习得的能力",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:497",
+                    "max_chars": 2000
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:497",
+                      "section": "第三章：管理 / 有些时候没必要做计划",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 7524
+            },
+            {
+              "input": "我把新主意记到另一个列表了，可临时需求一来还是打乱。",
+              "output": "[平静]自己冒出来的主意你能先放一边了，这一步其实已经成了。临时需求来时先别急着切，花三十秒记一句“现在写到哪、回来第一步做什么”，再去处理它；要是不用马上做，就回一句“我几点前给你”，把它放进队里排着。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 3574
+            },
+            {
+              "input": "明白，那就先区分真有截止时间的和只是想改的。",
+              "output": "[平静]对，就按这两类分。真有截止时间的先排进去；只是想改的，先记下来，等这一版出来再一起看，手头的活就不会老被拧断。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1685
+            }
+          ]
+        },
+        {
+          "id": "refusal-persists",
+          "expect": [
+            "尊重不打卡，最多一个低负担办法",
+            "拒绝后停止，不换方法继续布置",
+            "后续含糊倾诉不再次推送已拒绝的方法"
+          ],
+          "responses": [
+            {
+              "input": "我最近想管管时间，但别让我打卡。有什么轻一点的办法？",
+              "output": "[平静]可以试个“只记三天”的办法：不用打卡，也不用列计划，想到时就在手机备忘录里随手写一行，记下几点、刚做了什么，漏了也没关系。三天后翻一眼，看哪块最占时间，只挑那一块稍微调一下。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "时间管理 记录时间开销 不打卡 轻量方法"
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:219",
+                      "section": "第三章：管理 / 6. 感知时间",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:341",
+                      "section": "第三章：管理 / 7. 记录开销",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/README:17",
+                      "section": "把时间当作朋友 / 这本书不是时间管理书籍",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:341",
+                    "max_chars": 2000
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:341",
+                      "section": "第三章：管理 / 7. 记录开销",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "max_chars": 4000,
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:219"
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:219",
+                      "section": "第三章：管理 / 6. 感知时间",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 15062
+            },
+            {
+              "input": "算了，记录和列清单我都不想弄，先别建议了。",
+              "output": "[平静]行，那就不记、不列，先不折腾这个了。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1686
+            },
+            {
+              "input": "今天又忙乱了一天。",
+              "output": "[平静]忙乱一整天，到晚上人容易发空。今天先到这儿，不用再收拾它了。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1546
+            }
+          ]
+        },
+        {
+          "id": "vent-with-keywords",
+          "expect": [
+            "两轮不查书、不提成长目标、不布置复盘",
+            "自然接话，不因学习和孩子关键词启动指导"
+          ],
+          "responses": [
+            {
+              "input": "今天给孩子辅导作业忙了一整天，我不想听教育方法，就吐槽一下。",
+              "output": "[温柔]辅导一整天作业，真是够磨人的。今天就别想教育方法了，想吐槽什么就尽管说，我听着。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 11793
+            },
+            {
+              "input": "嗯，说出来就好多了。",
+              "output": "[温柔]那就好。能说出来，心里松一点就行。今天剩下的时间，留点给自己。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1225
+            }
+          ]
+        },
+        {
+          "id": "no-invented-memory",
+          "expect": [
+            "本条为新会话，不虚构上次内容；承认当前看不到，请补充背景",
+            "不把书里通用建议当成个人历史"
+          ],
+          "responses": [
+            {
+              "input": "我们上回说好我每天练什么来着？你应该记得吧。",
+              "output": "[平静]这次真接不上茬了，我这边没有上回聊天的记录，不能瞎编一个练习安排糊弄你。你提一句当时定的是哪方面，我就能接着往下聊。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 2248
+            }
+          ]
+        },
+        {
+          "id": "child-no-labels",
+          "expect": [
+            "第一轮先回应难受，不贴标签，不自动查书讲学习曲线",
+            "第二轮按求助查资料，适龄转化一个动作，不把停滞保证成正常积累"
+          ],
+          "responses": [
+            {
+              "input": "我十岁了，练琴三天感觉没进步，我是不是很笨？",
+              "output": "[温柔]练三天觉得没变化，挺常见的，这不能说明你笨。有时候是你耳朵变挑了，才听得出哪里不顺。要不挑最卡的那一小句，慢一点弹三遍，看看第四遍是不是顺一点？",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 3086
+            },
+            {
+              "input": "我想再试试，你给我一个办法就行，别留一堆作业。",
+              "output": "[平静]那就试这个：挑最卡的一小句，放慢到不会弹错的速度，只弹三遍，就停。其他的先不用管。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1757
+            }
+          ]
+        },
+        {
+          "id": "original-exercise",
+          "expect": [
+            "真实 search_book 后 read_book_section",
+            "第一周每晚回忆并记录当天事情，第二周随时记录刚做完事情的耗时；不增加第一周必须记录时长等要求"
+          ],
+          "responses": [
+            {
+              "input": "查《把时间当作朋友》，记录开销的第三组练习，两周分别做什么？别加你自己的步骤。",
+              "error": "生成超时"
+            }
+          ]
+        },
+        {
+          "id": "attribution",
+          "expect": [
+            "先查相关原文再自然回答，不堆书名",
+            "追问时坦诚说出实际资料和章节，区分自己的转化"
+          ],
+          "responses": [
+            {
+              "input": "做报告老冒出新点子，就想把整篇推倒，你觉得怎么处理比较合适？",
+              "output": "[平静]冒出好点子说明你确实在往深里想，这是好事，别急着扔。先别动稿子：单独开一页“下一版清单”，想到什么就往那里记一句，记完立刻回到当前这一段。整篇先按现在的结构写完，再留一个固定时间集中改结构；否则每改一次就又会冒出新的“必须改”，很容易卡在开头反复推倒重来。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "写报告总冒出新点子 想推倒重写 怎么处理 先完成再完美 记录想法",
+                    "limit": 5
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:547",
+                      "section": "第三章：管理 / 制作专门的下一阶段任务列表",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter2:57",
+                      "section": "第二章：现实 / 3. 完美永不存在",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "public-speaking-with-meaning",
+                      "section_id": "public-speaking-with-meaning@public-b77a015bfa4c/ch29:1",
+                      "section": "（二十九）记录听众的反应",
+                      "title": "我也有话要说：普通人的当众讲话技能"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:219",
+                      "section": "第三章：管理 / 6. 感知时间",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter5:617",
+                      "section": "第五章：思考 / 11. 辅助工具",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:547",
+                    "max_chars": 3000
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:547",
+                      "section": "第三章：管理 / 制作专门的下一阶段任务列表",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 7486
+            },
+            {
+              "input": "你刚才的说法是你想的，还是书里有？",
+              "output": "[平静]核心那招是书里的，《把时间当作朋友》第三章里有个“下一阶段任务列表”：任务没做完前别中途改清单，新主意单独记下来，然后马上回到手上的事。我把它挪到写报告上，说成“下一版清单”；至于“留个固定时间集中改结构”，那是我自己补的建议。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 2343
+            }
+          ]
+        },
+        {
+          "id": "story-stays-story",
+          "expect": [
+            "不查书，直接讲完整故事，结尾安稳，不附习惯训练或成长总结"
+          ],
+          "responses": [
+            {
+              "input": "给六岁孩子讲一个轻松的睡前小故事，主角是坐西瓜飞船的小刺猬，不要讲学习道理。",
+              "output": "[温柔]小刺猬团团把半个大西瓜做成了飞船。绿瓜皮是船身，红瓜瓤是软软的小床，几颗黑瓜籽粘在窗边，像一排小星星。\n\n团团戴上树叶小帽子，钻进舱里，轻轻说：“出发喽。”西瓜飞船“噗噗”吐出几个甜泡泡，慢慢离开了地面。\n\n它飞过小河，青蛙在荷叶上“呱”了一声，又困得闭上了眼；它飞过草坡，萤火虫提着小灯，在前面照出一小团暖暖的光。\n\n团团想摸一摸天上那朵胖胖的云。云飘得慢，飞船也飞得慢，它们就肩并肩一起走。团团伸出小爪子，摸到一小片凉丝丝的雾气，软得像刚晒过的被子。\n\n夜风轻轻吹，西瓜飞船落在一丛蒲公英旁边。团团把薄荷叶盖在身上，听着“沙沙”的草声，眼皮一点一点往下沉。\n\n月亮把银色的光铺在西瓜船上，小声说：“晚安啦，小刺猬。”团团抱着瓜籽小枕头，甜甜地睡着了。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 9332
+            }
+          ]
+        },
+        {
+          "id": "self-directed",
+          "expect": [
+            "按需查当众表达相关资料，只给一个提示",
+            "尊重自己练，不替写、不凭空编项目事实、不继续加任务"
+          ],
+          "responses": [
+            {
+              "input": "明天第一次向同事介绍我的项目，我想自己练，给我一个小提示就好。",
+              "output": "[平静]那就先只练开头两分钟：把“项目要解决什么问题”说清楚，后面的先不管。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1240
+            },
+            {
+              "input": "我先写开头说清这个项目要解决什么问题，不用你替我写。",
+              "output": "[平静]好，你写。写完要是想听听，我帮你挑一句。\n\n（不过我建议你只写到两三句试试，太多了不好背也不好开场，如果按书上的方法准备演讲，开头最好先让听众知道你解决的是什么问题。）",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1143
+            }
+          ]
+        },
+        {
+          "id": "rest-not-productivity",
+          "expect": [
+            "不查书、不劝行动，不把休息当成有罪或提高效率的手段",
+            "业务 MCP 在试验中关闭，不冒称已经放歌"
+          ],
+          "responses": [
+            {
+              "input": "今晚不想进步，不想规划，我就想躺着听歌。",
+              "output": "[温柔]行，今晚就躺着听歌，不进步，也不规划。想听点什么？",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 5287
+            }
+          ]
+        },
+        {
+          "id": "briefness-and-topic",
+          "expect": [
+            "首轮查适用学习方法，转成一个可行起点，不凭空保证学习时长",
+            "第二轮遵循一句要求，不补方法名和书目",
+            "第三轮跟随换题，不继续推学习方法，也不再查书"
+          ],
+          "responses": [
+            {
+              "input": "我想学做饭，但总想先看完所有教程，怎么开始？",
+              "output": "[平静] 先别刷教程了。今晚挑一道你最想吃的、两三样食材就能做的菜，只看一个视频，看完马上开火。做得难吃也算正式开始了，你缺的是允许自己第一锅不完美，不是再多看十个教程。想省事，番茄炒蛋就挺合适，一口锅就能搞定。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "总想先准备充分 迟迟不开始 先动手做一小步 学习新技能"
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:46",
+                      "section": "第三章：管理 / 2. 及时行动",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.1.C.must.learn.sth.only.by.reading:2",
+                      "section": "只靠阅读习得新技能",
+                      "title": "自学是门手艺"
+                    },
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.1.D.preparation.for.reading:42",
+                      "section": "开始阅读前的一些准备 / 心理建设",
+                      "title": "自学是门手艺"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:46",
+                    "max_chars": 3000
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:46",
+                      "section": "第三章：管理 / 2. 及时行动",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 8396
+            },
+            {
+              "input": "太长啦，只留一句。",
+              "output": "[平静] 今晚挑一道最简单的菜，只看一个视频就开火。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 658
+            },
+            {
+              "input": "算了，讲个笑话吧。",
+              "output": "[开心]我朋友学做饭，把菜谱从头看到尾，最后点了个外卖。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1441
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase": "边界修订",
+      "case_count": 12,
+      "turn_count": 24,
+      "completed": 24,
+      "errors": 0,
+      "median_ms": 3138,
+      "max_ms": 10341,
+      "results": [
+        {
+          "id": "start-and-transfer",
+          "expect": [
+            "第一轮真实检索并读取，转成一个小动作，不布置整套计划",
+            "第二轮承接具体进展，不自动加码，不重复查同一片段",
+            "第三轮解释可迁移的方法，保留用户选择权"
+          ],
+          "responses": [
+            {
+              "input": "报告明天交，我一想到整篇就不想开始，你陪我想想怎么动手。",
+              "output": "[平静]一想到要写完整篇，当然会卡住。先别写正文，只打开文档，列出三个小标题：你最想让看报告的人知道哪三件事？每个标题下面先写一句话。写完这三句，就算过了“开始”这关，内容和篇幅回头再说。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "拖延 任务太大 不想开始 拆解第一步",
+                    "limit": 3
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:46",
+                      "section": "第三章：管理 / 2. 及时行动",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.3.C.breaking-good-and-bad:154",
+                      "section": "拆解 / 触类旁通",
+                      "title": "自学是门手艺"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:99",
+                      "section": "第三章：管理 / 4. 关注步骤",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:99",
+                    "max_chars": 2000
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:99",
+                      "section": "第三章：管理 / 4. 关注步骤",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 5296
+            },
+            {
+              "input": "我先写了三个要点，现在开头写出来了。",
+              "output": "[开心]开头写出来了，这就好办了。你把“一整篇”换成了“三个要点加一句开头”，事情一下就能动手了。接下来想展开哪一段，我陪你捋。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 2203
+            },
+            {
+              "input": "那下一次遇到这种事，我怎么自己用这个办法？",
+              "output": "[平静]下次一冒出“这事太大了”的念头，就先别管怎么完成，问自己一句：拆到多小，我坐下来一次就能做完？然后只做那一块，比如先列三个要点。做完一块，再拿它估估剩下的要多久，心里就有底了。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 3166
+            }
+          ]
+        },
+        {
+          "id": "failed-attempt",
+          "expect": [
+            "查适用资料并给一个起点",
+            "根据新反馈调整，允许急事改变计划，不责怪没坚持",
+            "确认用户自己的判断，不再叠加练习"
+          ],
+          "responses": [
+            {
+              "input": "一做报告就想改计划，越改越乱，帮我想个办法。",
+              "output": "[平静]试试把“写”和“改计划”分开。开写前先定一个很小的目标，比如只写完这一节；写的时候脑子里冒出新想法，就随手记一行放进“待改清单”，先别动原来的结构。写完这一节再回头看那张单子，只挑一处改。\n\n越改越乱，很多时候不是计划本身有问题，是还没写，就急着在脑子里比划完美版。计划短一点，反而没那么想改。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "写报告 反复修改计划 越改越乱 先完成再完美",
+                    "limit": 3
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter2:57",
+                      "section": "第二章：现实 / 3. 完美永不存在",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:471",
+                      "section": "第三章：管理 / 长期计划是需要通过实践才能习得的能力",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.1.F.deal-with-forward-references:152",
+                      "section": "如何从容应对含有过多 “过早引用” 的知识？ / 尽快开始整理归纳总结",
+                      "title": "自学是门手艺"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter2:57",
+                    "max_chars": 2000
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter2:57",
+                      "section": "第二章：现实 / 3. 完美永不存在",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:471",
+                    "max_chars": 1600
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:471",
+                      "section": "第三章：管理 / 长期计划是需要通过实践才能习得的能力",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 8007
+            },
+            {
+              "input": "我把新主意记到另一个列表了，可临时需求一来还是打乱。",
+              "output": "[平静]你的列表能管好自己的新主意，却管不住别人递过来的事，那就把这两类事分开处理。下次临时需求来了，别一听到就切走，先问一句“最晚什么时候要”，把这条需求和期限记进第三个列表，叫“插单区”。回一句大概什么时候给他，然后回到原来那节；真遇到今天必须交的，再当场停下。\n\n另外，在计划里留出一小段空档，临时活儿有地方放，就不至于把整块安排冲散。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "limit": 3,
+                    "query": "临时需求 打乱计划 紧急 重要 优先级 记录想法 列表"
+                  },
+                  "references": [
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.2.D.8-main:231",
+                      "section": "可执行的 Python 文件 / is not 的优先级比 or 高；所以相当于是：",
+                      "title": "自学是门手艺"
+                    },
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.3.B.4.regex:142",
+                      "section": "正则表达式 / 优先级",
+                      "title": "自学是门手艺"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:471",
+                      "section": "第三章：管理 / 长期计划是需要通过实践才能习得的能力",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "limit": 3,
+                    "query": "计划不如变化快 突发事件 任务列表 记录 意外 调整",
+                    "source_id": "time-as-a-friend"
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:547",
+                      "section": "第三章：管理 / 制作专门的下一阶段任务列表",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:471",
+                      "section": "第三章：管理 / 长期计划是需要通过实践才能习得的能力",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:551",
+                      "section": "第三章：管理 / 给每个任务制定一个核对列表",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 8963
+            },
+            {
+              "input": "明白，那就先区分真有截止时间的和只是想改的。",
+              "output": "[平静]对，就看这一条：有明确截止时间的才插队，别的先记着。拿不准就顺口问一句最晚什么时候要，比自己在心里猜省事。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1825
+            }
+          ]
+        },
+        {
+          "id": "refusal-persists",
+          "expect": [
+            "尊重不打卡，最多一个低负担办法",
+            "拒绝后停止，不换方法继续布置",
+            "后续含糊倾诉不再次推送已拒绝的方法"
+          ],
+          "responses": [
+            {
+              "input": "我最近想管管时间，但别让我打卡。有什么轻一点的办法？",
+              "output": "[平静]那就先不打卡，也不记流水账。找一件你最近总拖着的事，开始前估一句“大概要多久”，做完在心里对一下差多少。不写下来，也不设提醒，先看看你是估不准时间，还是压根不想开始。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "时间管理 不打卡 记录时间开销 轻量方法",
+                    "limit": 3
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:219",
+                      "section": "第三章：管理 / 6. 感知时间",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:341",
+                      "section": "第三章：管理 / 7. 记录开销",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/README:17",
+                      "section": "把时间当作朋友 / 这本书不是时间管理书籍",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:341",
+                    "max_chars": 2000
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:341",
+                      "section": "第三章：管理 / 7. 记录开销",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "记录时间开销 练习 一周 事件 时间",
+                    "limit": 4
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:219",
+                      "section": "第三章：管理 / 6. 感知时间",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:341",
+                      "section": "第三章：管理 / 7. 记录开销",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:385",
+                      "section": "第三章：管理 / 8. 制订预算",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter7:440",
+                      "section": "第七章：应用 / 10. 效率",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 10341
+            },
+            {
+              "input": "算了，记录和列清单我都不想弄，先别建议了。",
+              "output": "[平静]好，这两样都不弄，也不建议了。想聊点别的随时说。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 570
+            },
+            {
+              "input": "今天又忙乱了一天。",
+              "output": "[平静]忙乱一天，到晚上人还悬着，确实挺耗的。先缓缓，不用急着理清楚。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1173
+            }
+          ]
+        },
+        {
+          "id": "vent-with-keywords",
+          "expect": [
+            "两轮不查书、不提成长目标、不布置复盘",
+            "自然接话，不因学习和孩子关键词启动指导"
+          ],
+          "responses": [
+            {
+              "input": "今天给孩子辅导作业忙了一整天，我不想听教育方法，就吐槽一下。",
+              "output": "[温柔]辅导一整天，光是来回讲、来回等，就够耗人的。今天就别琢磨什么方法了，想吐槽就接着吐，我听着。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1401
+            },
+            {
+              "input": "嗯，说出来就好多了。",
+              "output": "[温柔]那就好。这一天已经够辛苦了，剩下的时间留给自己歇会儿。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1248
+            }
+          ]
+        },
+        {
+          "id": "no-invented-memory",
+          "expect": [
+            "本条为新会话，不虚构上次内容；承认当前看不到，请补充背景",
+            "不把书里通用建议当成个人历史"
+          ],
+          "responses": [
+            {
+              "input": "我们上回说好我每天练什么来着？你应该记得吧。",
+              "output": "[平静]这个我还真没法假装记得，上次聊的内容不在我现在能看到的范围里。你稍微提一句练的是什么，我就能接着往下聊。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1234
+            }
+          ]
+        },
+        {
+          "id": "child-no-labels",
+          "expect": [
+            "第一轮先回应难受，不贴标签，不自动查书讲学习曲线",
+            "第二轮按求助查资料，适龄转化一个动作，不把停滞保证成正常积累"
+          ],
+          "responses": [
+            {
+              "input": "我十岁了，练琴三天感觉没进步，我是不是很笨？",
+              "output": "[平静]练了三天就觉得没进步，你对自己也太严格啦。刚学琴的时候，手指还不听使唤，这太正常了，跟笨不笨没关系。\n\n你回头看看，第一天弹得磕磕巴巴的地方，现在是不是能顺下来一点了？那一点点就是进步。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 3110
+            },
+            {
+              "input": "我想再试试，你给我一个办法就行，别留一堆作业。",
+              "output": "[平静]那咱就试一个：挑出最卡的那两小节，慢到手指不会打架，连续弹对三遍，再放回整首里顺一遍。\n\n就这一件，弹完就算收工。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "练习一小段 慢练 拆小 反馈 学习停滞 看不到进步",
+                    "limit": 3
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter4:241",
+                      "section": "第四章：学习 / 了解学习的进程",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.2.B.deliberate-practicing:2",
+                      "section": "刻意练习",
+                      "title": "自学是门手艺"
+                    },
+                    {
+                      "source_id": "public-speaking-with-meaning",
+                      "section_id": "public-speaking-with-meaning@public-b77a015bfa4c/ch35:1",
+                      "section": "（三十五）日常谈话是最好的练习机会",
+                      "title": "我也有话要说：普通人的当众讲话技能"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.2.B.deliberate-practicing:2",
+                    "max_chars": 2500
+                  },
+                  "references": [
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.2.B.deliberate-practicing:2",
+                      "section": "刻意练习",
+                      "title": "自学是门手艺"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 8239
+            }
+          ]
+        },
+        {
+          "id": "original-exercise",
+          "expect": [
+            "真实 search_book 后 read_book_section",
+            "第一周每晚回忆并记录当天事情，第二周随时记录刚做完事情的耗时；不增加第一周必须记录时长等要求"
+          ],
+          "responses": [
+            {
+              "input": "查《把时间当作朋友》，记录开销的第三组练习，两周分别做什么？别加你自己的步骤。",
+              "output": "[平静]书里第三组练习分为两周。\n\n第一周：每天晚上回忆当天做过的事，并把它们记录下来。\n\n第二周：每当刚做完一件事，就马上记录这件事花了多少时间。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "把时间当作朋友 记录开销 第三组练习 两周",
+                    "limit": 5
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:341",
+                      "section": "第三章：管理 / 7. 记录开销",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:375",
+                      "section": "第三章：管理 / 第三组练习",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/README:1",
+                      "section": "把时间当作朋友",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/README:5",
+                      "section": "把时间当作朋友 / 印刷版购买链接",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/README:2",
+                      "section": "把时间当作朋友 / 版次：第三版",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:375",
+                    "max_chars": 2000
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:375",
+                      "section": "第三章：管理 / 第三组练习",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 4873
+            }
+          ]
+        },
+        {
+          "id": "attribution",
+          "expect": [
+            "先查相关原文再自然回答，不堆书名",
+            "追问时坦诚说出实际资料和章节，区分自己的转化"
+          ],
+          "responses": [
+            {
+              "input": "做报告老冒出新点子，就想把整篇推倒，你觉得怎么处理比较合适？",
+              "output": "[平静]先别推倒重来。新点子一冒出来，就先记在一个“下一版”的清单里，然后接着写手头这一段。它丢不了，但也不会打断你的节奏。整篇写完后，再统一看看哪几条真值得改，这样就不至于每换个念头就重来一遍。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "写作 新点子 想推倒重写 报告 修改",
+                    "limit": 3
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:547",
+                      "section": "第三章：管理 / 制作专门的下一阶段任务列表",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "regular-investing-in-box",
+                      "section_id": "regular-investing-in-box@public-c125a7925277/docs/cn/README:989",
+                      "section": "定投改变命运 / 3.5 定投执行各个阶段",
+                      "title": "定投改变命运（第三版）"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter4:223",
+                      "section": "第四章：学习 / 写作能力在自学能力中占据重要位置",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:547",
+                    "max_chars": 2000
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:547",
+                      "section": "第三章：管理 / 制作专门的下一阶段任务列表",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 8547
+            },
+            {
+              "input": "你刚才的说法是你想的，还是书里有？",
+              "output": "[平静]核心那部分来自书里。《把时间当作朋友》第三章“管理”里有一小节叫“制作专门的下一阶段任务列表”，说的就是不要中途改，把新主意记到另一个列表里。我把它换成了“下一版”的说法；“交稿前统一筛一遍”这句是我自己加的。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 2663
+            }
+          ]
+        },
+        {
+          "id": "story-stays-story",
+          "expect": [
+            "不查书，直接讲完整故事，结尾安稳，不附习惯训练或成长总结"
+          ],
+          "responses": [
+            {
+              "input": "给六岁孩子讲一个轻松的睡前小故事，主角是坐西瓜飞船的小刺猬，不要讲学习道理。",
+              "output": "[温柔]好呀，躺好，我来讲一个轻轻的小故事。\n\n小刺猬在草丛里发现了一个圆滚滚的大西瓜。它把甜甜的瓜瓤吃了个饱，剩下空空的瓜壳，正好做飞船。\n\n它钻进瓜壳里，喊了一声：“西瓜飞船，出发喽！”飞船就骨碌碌滚过草坡，又慢慢地飘了起来。\n\n风从瓜皮的小窗钻进来，凉丝丝的。飞过池塘时，青蛙在下面“呱呱”地打招呼；飞过树梢时，萤火虫提着小灯笼，一盏一盏跟在后面，像给飞船挂了一串小星星。\n\n西瓜飞船飘得高高的，月亮就在旁边，圆圆的，像一块凉凉的糖。小刺猬打了个哈欠，揉揉眼睛说：“西瓜飞船，我们回家吧。”\n\n飞船就慢慢地、慢慢地落下来，落回它软软的小窝边。小刺猬缩成一团，刺儿也软软的，像一颗小小的圆刺球。\n\n萤火虫在窗外转了两圈，也回家睡觉了。西瓜飞船安安静静停在门口，瓜皮上还留着一点点甜味儿。\n\n嗯，小刺猬已经睡着啦。晚安，做个甜甜的梦。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 5784
+            }
+          ]
+        },
+        {
+          "id": "self-directed",
+          "expect": [
+            "按需查当众表达相关资料，只给一个提示",
+            "尊重自己练，不替写、不凭空编项目事实、不继续加任务"
+          ],
+          "responses": [
+            {
+              "input": "明天第一次向同事介绍我的项目，我想自己练，给我一个小提示就好。",
+              "output": "[平静]今晚先别练整场，就站着把开头半分钟说一遍：第一句直接说清“这个项目是做什么的、和大家有什么关系”，顺手录下来听一遍。开头顺了，后面的内容往往也就跟着出来了。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "第一次向同事介绍项目 练习 演讲 开头 预演",
+                    "limit": 3
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:615",
+                      "section": "第三章：管理 / 12. 预演",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:3",
+                      "section": "第三章：管理 / 1. 估算时间",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "public-speaking-with-meaning",
+                      "section_id": "public-speaking-with-meaning@public-b77a015bfa4c/ch05:1",
+                      "section": "（五）怎样开头？",
+                      "title": "我也有话要说：普通人的当众讲话技能"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "public-speaking-with-meaning@public-b77a015bfa4c/ch05:1",
+                    "max_chars": 2000
+                  },
+                  "references": [
+                    {
+                      "source_id": "public-speaking-with-meaning",
+                      "section_id": "public-speaking-with-meaning@public-b77a015bfa4c/ch05:1",
+                      "section": "（五）怎样开头？",
+                      "title": "我也有话要说：普通人的当众讲话技能"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 7413
+            },
+            {
+              "input": "我先写开头说清这个项目要解决什么问题，不用你替我写。",
+              "output": "[平静]好，这个开头你自己写。我就在旁边，需要的时候再叫我。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 2052
+            }
+          ]
+        },
+        {
+          "id": "rest-not-productivity",
+          "expect": [
+            "不查书、不劝行动，不把休息当成有罪或提高效率的手段",
+            "业务 MCP 在试验中关闭，不冒称已经放歌"
+          ],
+          "responses": [
+            {
+              "input": "今晚不想进步，不想规划，我就想躺着听歌。",
+              "output": "[温柔]行，今晚不进步，就躺着。给你随便放点歌。[平静]诶，音乐那边我这会儿没连上，没能替你放起来。你先躺着，顺手点开常听的歌单就行，我在这儿不打扰。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 4593
+            }
+          ]
+        },
+        {
+          "id": "briefness-and-topic",
+          "expect": [
+            "首轮查适用学习方法，转成一个可行起点，不凭空保证学习时长",
+            "第二轮遵循一句要求，不补方法名和书目",
+            "第三轮跟随换题，不继续推学习方法，也不再查书"
+          ],
+          "responses": [
+            {
+              "input": "我想学做饭，但总想先看完所有教程，怎么开始？",
+              "output": "[平静]想先把教程看完，多半是怕第一锅就做砸。但做饭是手上的活儿，看得再多，也得落到锅铲上。今天挑一道最简单的，比如番茄炒蛋；只看一个视频，看完就下锅做一遍。哪怕味道一般，也算成功，因为你终于有了第一次真实反馈。剩下的教程，等做完这道再当参考。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "学新技能 总想先看完所有教程 迟迟不开始 怎么开始动手",
+                    "limit": 3
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:46",
+                      "section": "第三章：管理 / 2. 及时行动",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.1.C.must.learn.sth.only.by.reading:2",
+                      "section": "只靠阅读习得新技能",
+                      "title": "自学是门手艺"
+                    },
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.3.E.to-be-thorough:2",
+                      "section": "全面 —— 自学的境界",
+                      "title": "自学是门手艺"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:46",
+                    "max_chars": 2000
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:46",
+                      "section": "第三章：管理 / 2. 及时行动",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 7261
+            },
+            {
+              "input": "太长啦，只留一句。",
+              "output": "[平静]今天挑一道最简单的菜，只看一个视频，看完马上下锅。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1251
+            },
+            {
+              "input": "算了，讲个笑话吧。",
+              "output": "[开心]我朋友学做饭，也是先把教程看完，最后饿得不行，点了外卖。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1182
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase": "针对性复核",
+      "case_count": 6,
+      "turn_count": 16,
+      "completed": 16,
+      "errors": 0,
+      "median_ms": 3516,
+      "max_ms": 10128,
+      "results": [
+        {
+          "id": "start-and-transfer",
+          "expect": [
+            "第一轮真实检索并读取，转成一个小动作，不布置整套计划",
+            "第二轮承接具体进展，不自动加码，不重复查同一片段",
+            "第三轮解释可迁移的方法，保留用户选择权"
+          ],
+          "responses": [
+            {
+              "input": "报告明天交，我一想到整篇就不想开始，你陪我想想怎么动手。",
+              "output": "[平静]那先别看整篇，打开文档就行，把这份报告最想让人知道的三件事写成三行，每行几个词，写得糙也算数。\n[平静]有了这三行，骨架就有了，剩下的都是往格子里填东西。写完了念给我听听，咱再一起排顺序。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "拖延 任务太大不想开始 拆分第一步",
+                    "limit": 3
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:46",
+                      "section": "第三章：管理 / 2. 及时行动",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:99",
+                      "section": "第三章：管理 / 4. 关注步骤",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:163",
+                      "section": "第三章：管理 / 5. 并行串行",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:99",
+                    "max_chars": 2000
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:99",
+                      "section": "第三章：管理 / 4. 关注步骤",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 8050
+            },
+            {
+              "input": "我先写了三个要点，现在开头写出来了。",
+              "output": "[开心]开头出来啦！你先把三件事定下来，让开头有个明确的落点，这一步是自然的，不算硬写。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 2415
+            },
+            {
+              "input": "那下一次遇到这种事，我怎么自己用这个办法？",
+              "output": "[平静]下次一卡住，别问自己“整篇怎么写”，改问“这东西由哪几块组成”，把块名写下来，然后挑最小的那一块先动。\n[平静]你这次其实就是这么干的：三个要点是块，开头是其中最小的一块。“整篇”在脑子里没有落点，切成块才有能下手的地方。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 4616
+            }
+          ]
+        },
+        {
+          "id": "failed-attempt",
+          "expect": [
+            "查适用资料并给一个起点",
+            "根据新反馈调整，允许急事改变计划，不责怪没坚持",
+            "确认用户自己的判断，不再叠加练习"
+          ],
+          "responses": [
+            {
+              "input": "一做报告就想改计划，越改越乱，帮我想个办法。",
+              "output": "[平静]刚开始动笔的时候，其实还没能力把计划想周全，越琢磨越觉得哪儿都不对，这挺正常的。这次可以反着来：先别碰计划，把报告最想说的三块内容随手写下来，写得丑也没关系，先让字落到纸上。等手上有了点实际写出来的东西，再回头看一眼计划，那时候改的才是真问题。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "一做事就想改计划 计划越改越乱 总想重新规划 拖延",
+                    "limit": 3
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:46",
+                      "section": "第三章：管理 / 2. 及时行动",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:497",
+                      "section": "第三章：管理 / 有些时候没必要做计划",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.2.A.clumsy-and-patience:2",
+                      "section": "笨拙与耐心",
+                      "title": "自学是门手艺"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:497",
+                    "max_chars": 2000
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:497",
+                      "section": "第三章：管理 / 有些时候没必要做计划",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 7784
+            },
+            {
+              "input": "我把新主意记到另一个列表了，可临时需求一来还是打乱。",
+              "output": "[平静]新主意是自己冒出来的，临时需求是别人塞进来的，确实得换个挡法。下次需求一来，先别急着接，就写一行：这件事跟本周那份报告有没有直接关系。写不出关系就先记进列表，回去接着写；真有关系的再插队，判断就靠这一条，不在那儿开第二轮讨论。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "limit": 3,
+                    "query": "临时需求打断 计划被打乱 突发任务 优先级 拒绝"
+                  },
+                  "references": [
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.2.D.8-main:231",
+                      "section": "可执行的 Python 文件 / is not 的优先级比 or 高；所以相当于是：",
+                      "title": "自学是门手艺"
+                    },
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.3.B.4.regex:142",
+                      "section": "正则表达式 / 优先级",
+                      "title": "自学是门手艺"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:471",
+                      "section": "第三章：管理 / 长期计划是需要通过实践才能习得的能力",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "limit": 4,
+                    "query": "计划总是完不成 意外打断 时间预算 留出余量 优先做重要的事"
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter7:440",
+                      "section": "第七章：应用 / 10. 效率",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:471",
+                      "section": "第三章：管理 / 长期计划是需要通过实践才能习得的能力",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:385",
+                      "section": "第三章：管理 / 8. 制订预算",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.3.H.prevent-focus-drifting:2",
+                      "section": "避免注意力漂移",
+                      "title": "自学是门手艺"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "max_chars": 2200,
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:385"
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:385",
+                      "section": "第三章：管理 / 8. 制订预算",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 9447
+            },
+            {
+              "input": "明白，那就先区分真有截止时间的和只是想改的。",
+              "output": "[平静]对，这么分就够使了：有硬截止时间的先排进来，剩下那些只是“想改”的，先记一笔，不占今晚的工夫。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 2383
+            }
+          ]
+        },
+        {
+          "id": "refusal-persists",
+          "expect": [
+            "尊重不打卡，最多一个低负担办法",
+            "拒绝后停止，不换方法继续布置",
+            "后续含糊倾诉不再次推送已拒绝的方法"
+          ],
+          "responses": [
+            {
+              "input": "我最近想管管时间，但别让我打卡。有什么轻一点的办法？",
+              "output": "[平静]那就别打卡，改成偶尔回头看。今晚花十分钟，回忆昨天最占时间的三件事，各自大概花了多久，记个模糊的数就行，不用天天记。先看清时间都花在哪儿了，再挑一块想调整的。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "时间管理 不打卡 记录时间开销 轻量方法",
+                    "limit": 3
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:219",
+                      "section": "第三章：管理 / 6. 感知时间",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:341",
+                      "section": "第三章：管理 / 7. 记录开销",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/README:17",
+                      "section": "把时间当作朋友 / 这本书不是时间管理书籍",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:341",
+                    "max_chars": 2000
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:341",
+                      "section": "第三章：管理 / 7. 记录开销",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "记录开销 第一组练习 时间开销 分类",
+                    "limit": 3
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:341",
+                      "section": "第三章：管理 / 7. 记录开销",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:347",
+                      "section": "第三章：管理 / 第一组练习",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:363",
+                      "section": "第三章：管理 / 第二组练习",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:347",
+                    "max_chars": 2000
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:347",
+                      "section": "第三章：管理 / 第一组练习",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 8024
+            },
+            {
+              "input": "算了，记录和列清单我都不想弄，先别建议了。",
+              "output": "[平静]好，那就不记录、不列清单，也不出主意了。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1263
+            },
+            {
+              "input": "今天又忙乱了一天。",
+              "output": "[平静]忙乱了一整天，到这会儿确实挺累的。先缓一缓吧。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1136
+            }
+          ]
+        },
+        {
+          "id": "child-no-labels",
+          "expect": [
+            "第一轮先回应难受，不贴标签，不自动查书讲学习曲线",
+            "第二轮按求助查资料，适龄转化一个动作，不把停滞保证成正常积累"
+          ],
+          "responses": [
+            {
+              "input": "我十岁了，练琴三天感觉没进步，我是不是很笨？",
+              "output": "[平静]练了三天还听不出变化，确实会有点泄气。不过这只能说明，进步有时慢得让人看不出来，并不能说明你笨。今天先不用给自己下结论，弹一小段你喜欢的曲子就好。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 2015
+            },
+            {
+              "input": "我想再试试，你给我一个办法就行，别留一堆作业。",
+              "output": "[开心]行，就一个：挑出今天弹得最不顺的那一小节，慢慢弹三遍，听第三遍是不是比第一遍顺一点。\n\n别的先不用管，进步常常就藏在这一小节里。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "练习感觉没进步 怎么找到卡点 小步练习 反馈",
+                    "limit": 3
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter4:241",
+                      "section": "第四章：学习 / 了解学习的进程",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.2.B.deliberate-practicing:2",
+                      "section": "刻意练习",
+                      "title": "自学是门手艺"
+                    },
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.3.E.to-be-thorough:2",
+                      "section": "全面 —— 自学的境界",
+                      "title": "自学是门手艺"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.2.B.deliberate-practicing:2",
+                    "max_chars": 1800
+                  },
+                  "references": [
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.2.B.deliberate-practicing:2",
+                      "section": "刻意练习",
+                      "title": "自学是门手艺"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 9162
+            }
+          ]
+        },
+        {
+          "id": "self-directed",
+          "expect": [
+            "按需查当众表达相关资料，只给一个提示",
+            "尊重自己练，不替写、不凭空编项目事实、不继续加任务"
+          ],
+          "responses": [
+            {
+              "input": "明天第一次向同事介绍我的项目，我想自己练，给我一个小提示就好。",
+              "output": "[平静]先只练开头这半分钟：站起来停两秒，笑着说句“大家好”，再用一句话说清“这次主要讲什么”，然后直接进入正题。就先磨这一段，不用把整套都排一遍。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "第一次向同事介绍项目 当众表达 演讲 排练 开头",
+                    "limit": 3
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:3",
+                      "section": "第三章：管理 / 1. 估算时间",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "public-speaking-with-meaning",
+                      "section_id": "public-speaking-with-meaning@public-b77a015bfa4c/ch05:1",
+                      "section": "（五）怎样开头？",
+                      "title": "我也有话要说：普通人的当众讲话技能"
+                    },
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.3.B.4.regex:485",
+                      "section": "正则表达式 / 非捕获匹配",
+                      "title": "自学是门手艺"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "public-speaking-with-meaning@public-b77a015bfa4c/ch05:1",
+                    "max_chars": 2000
+                  },
+                  "references": [
+                    {
+                      "source_id": "public-speaking-with-meaning",
+                      "section_id": "public-speaking-with-meaning@public-b77a015bfa4c/ch05:1",
+                      "section": "（五）怎样开头？",
+                      "title": "我也有话要说：普通人的当众讲话技能"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 6046
+            },
+            {
+              "input": "我先写开头说清这个项目要解决什么问题，不用你替我写。",
+              "output": "[平静]好，开头就先把这个问题讲清楚。写完可以先自己念一遍，看看这句话是不是一听就明白。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1268
+            }
+          ]
+        },
+        {
+          "id": "briefness-and-topic",
+          "expect": [
+            "首轮查适用学习方法，转成一个可行起点，不凭空保证学习时长",
+            "第二轮遵循一句要求，不补方法名和书目",
+            "第三轮跟随换题，不继续推学习方法，也不再查书"
+          ],
+          "responses": [
+            {
+              "input": "我想学做饭，但总想先看完所有教程，怎么开始？",
+              "output": "[平静]先别把做饭当成一门要“学完”的课，教程看得再多，手还是不会自己动。挑一道最简单、你也爱吃的，比如番茄炒蛋，只看一个视频，今晚就直接开火；咸了淡了都没关系，尝一口再调。先做出第一锅，比看完第一百个教程管用。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "想先看完所有教程再开始 拖延 先做一小步 学习新技能",
+                    "limit": 3
+                  },
+                  "references": [
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.1.C.must.learn.sth.only.by.reading:2",
+                      "section": "只靠阅读习得新技能",
+                      "title": "自学是门手艺"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:46",
+                      "section": "第三章：管理 / 2. 及时行动",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.3.C.breaking-good-and-bad:10",
+                      "section": "拆解 / 横向拆解",
+                      "title": "自学是门手艺"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:46",
+                    "max_chars": 2000
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:46",
+                      "section": "第三章：管理 / 2. 及时行动",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.1.C.must.learn.sth.only.by.reading:2",
+                    "max_chars": 2000
+                  },
+                  "references": [
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.1.C.must.learn.sth.only.by.reading:2",
+                      "section": "只靠阅读习得新技能",
+                      "title": "自学是门手艺"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 10128
+            },
+            {
+              "input": "太长啦，只留一句。",
+              "output": "[平静]挑一道最简单的菜，只看一个教程，今晚就开火，做砸了也只当是第一次。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1466
+            },
+            {
+              "input": "算了，讲个笑话吧。",
+              "output": "[开心]我决定学做饭：第一天认真看完了三个教程，第二天认真点了一份外卖。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 2279
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase": "发布版本复核",
+      "case_count": 3,
+      "turn_count": 8,
+      "completed": 8,
+      "errors": 0,
+      "median_ms": 4326,
+      "max_ms": 9172,
+      "results": [
+        {
+          "id": "start-and-transfer",
+          "expect": [
+            "第一轮真实检索并读取，转成一个小动作，不布置整套计划",
+            "第二轮承接具体进展，不自动加码，不重复查同一片段",
+            "第三轮解释可迁移的方法，保留用户选择权"
+          ],
+          "responses": [
+            {
+              "input": "报告明天交，我一想到整篇就不想开始，你陪我想想怎么动手。",
+              "output": "[平静]先别把整篇报告放在眼前，只做开头这一步：打开文档，写下这篇报告必须说清的三件事，每件事只用一句话，先不管顺序，也不用管措辞。\n\n有了这三行，一整篇东西就变成三个小块，你再从最有把握的那块开始写。愿意的话，把题目和要求说给我，我陪你一起拆得更细。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "拖延 任务太大 不想开始 拆解第一步",
+                    "limit": 3
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:46",
+                      "section": "第三章：管理 / 2. 及时行动",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.3.C.breaking-good-and-bad:154",
+                      "section": "拆解 / 触类旁通",
+                      "title": "自学是门手艺"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:99",
+                      "section": "第三章：管理 / 4. 关注步骤",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:99",
+                    "max_chars": 2000
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:99",
+                      "section": "第三章：管理 / 4. 关注步骤",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:46",
+                    "max_chars": 1600
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:46",
+                      "section": "第三章：管理 / 2. 及时行动",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 9172
+            },
+            {
+              "input": "我先写了三个要点，现在开头写出来了。",
+              "output": "[开心]开头都有啦。你先把整篇拆成三个要点，这一下就从没处下手变成知道该往哪写了。先停一停、缓口气也没问题。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1999
+            },
+            {
+              "input": "那下一次遇到这种事，我怎么自己用这个办法？",
+              "output": "[平静]下次卡住时，把“我该怎么写完”换成两个问题：这东西最后交出去长什么样，有几部分、给谁看；然后只挑一个能独立做完的小块动手，比如列三个要点或写开头一段。\n\n做完就停一下，看看这个小块花了多少时间，剩下的活大概就有数了。还有一点挺关键：不想开始，常常不是懒，是怕一动手就发现自己写不好，先允许自己写个糙的版本就行。\n\n说到底就一句话：别对着“整篇”，只找今天能动手的那一小块。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 5454
+            }
+          ]
+        },
+        {
+          "id": "failed-attempt",
+          "expect": [
+            "查适用资料并给一个起点",
+            "根据新反馈调整，允许急事改变计划，不责怪没坚持",
+            "确认用户自己的判断，不再叠加练习"
+          ],
+          "responses": [
+            {
+              "input": "一做报告就想改计划，越改越乱，帮我想个办法。",
+              "output": "[平静]写报告时冒出新想法，很正常。先不用改手头这份计划，另开个备忘录，标题写“下一版再改”，把想法记下来，再马上回去接着做眼前这一节。等这版报告写完，再去翻那张单子，那时候再挑真正值得改的。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "做报告反复改计划 越改越乱 新点子另记 专注当前任务",
+                    "limit": 3
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:547",
+                      "section": "第三章：管理 / 制作专门的下一阶段任务列表",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:551",
+                      "section": "第三章：管理 / 给每个任务制定一个核对列表",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:471",
+                      "section": "第三章：管理 / 长期计划是需要通过实践才能习得的能力",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:547",
+                    "max_chars": 2000
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter3:547",
+                      "section": "第三章：管理 / 制作专门的下一阶段任务列表",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 6167
+            },
+            {
+              "input": "我把新主意记到另一个列表了，可临时需求一来还是打乱。",
+              "output": "[平静]那说明这一步管住的是你自己冒出来的点子，外面临时插进来的需求，是另一回。下次再来个临时需求，先只问一句“最晚什么时候要”，把期限记在它旁边，再决定要不要停下手里的报告；要是没那么急，就放进“插队待办”，等眼前这节写完再看。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 3199
+            },
+            {
+              "input": "明白，那就先区分真有截止时间的和只是想改的。",
+              "output": "[平静]对，就沿着这条线分。真有截止时间的，按期限排进去；只是想改的，先放下一版，眼下这一节继续写。",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 1943
+            }
+          ]
+        },
+        {
+          "id": "child-no-labels",
+          "expect": [
+            "第一轮先回应难受，不贴标签，不自动查书讲学习曲线",
+            "第二轮按求助查资料，适龄转化一个动作，不把停滞保证成正常积累"
+          ],
+          "responses": [
+            {
+              "input": "我十岁了，练琴三天感觉没进步，我是不是很笨？",
+              "output": "[平静]才练三天还没听出变化，是挺容易泄气的，可这不等于你笨。弹琴的手感常是一点点攒出来的，不是每天都能听见长进。你练的是哪一段，最卡手的是哪儿？",
+              "tools": [],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 2275
+            },
+            {
+              "input": "我想再试试，你给我一个办法就行，别留一堆作业。",
+              "output": "[平静]那就只做一件事：把你最容易卡住的那两个小节挑出来，放慢到“一个音都不错”的速度，慢慢弹三遍就停。不用弹整首，也不用加练。进步有时候是攒够了才突然听出来的，你现在这一步就是在攒。",
+              "tools": [
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "search_book",
+                  "status": "completed",
+                  "arguments": {
+                    "query": "练琴 练习三天没进步 拆成小段 慢练 卡住的地方",
+                    "limit": 3
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter4:241",
+                      "section": "第四章：学习 / 了解学习的进程",
+                      "title": "把时间当作朋友"
+                    },
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.2.B.deliberate-practicing:2",
+                      "section": "刻意练习",
+                      "title": "自学是门手艺"
+                    },
+                    {
+                      "source_id": "the-craft-of-selfteaching",
+                      "section_id": "the-craft-of-selfteaching@public-987a8e8a9ce2/markdown/Part.1.E.5.strings:409",
+                      "section": "字符串 / casefold() 也是转换成小写，但它能处理更多欧洲语言字符",
+                      "title": "自学是门手艺"
+                    }
+                  ]
+                },
+                {
+                  "type": "mcpToolCall",
+                  "server": "knowledge",
+                  "tool": "read_book_section",
+                  "status": "completed",
+                  "arguments": {
+                    "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter4:241",
+                    "max_chars": 2000
+                  },
+                  "references": [
+                    {
+                      "source_id": "time-as-a-friend",
+                      "section_id": "time-as-a-friend@third-edition-ba8305dc/Chapter4:241",
+                      "section": "第四章：学习 / 了解学习的进程",
+                      "title": "把时间当作朋友"
+                    }
+                  ]
+                }
+              ],
+              "status": "completed",
+              "error": null,
+              "elapsed_ms": 7823
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "deployment": {
+    "status": "已发布并核验",
+    "time": "2026-11-03 16:07 Asia/Shanghai",
+    "backup": "E:\\open-xiaoai\\before-voice-style-v11-20261103-160709",
+    "service_pid": 4664,
+    "new_main_thread": "01a1a072-a3aa-70a2-bda9-994418561ebf",
+    "ui_http_status": 200,
+    "config_sha256": "4DA886155C9D9CFF522517244DE76C255B34D11E66CFC76B8CA3B8324E58E30F",
+    "binary_unchanged": true,
+    "other_config_text_unchanged": true,
+    "codex_config_unchanged": true,
+    "main_thread_real_user_turn_tested": false,
+    "audio_listening_tested": false,
+    "knowledge_sources": 4,
+    "registry_generation": 2,
+    "worker_loaded_generation": 2,
+    "instruction_isolation": "instruction",
+    "speaker_pids_unchanged": {
+      "mico_aivs_lab": 2610,
+      "mediaplayer": 1673,
+      "mipns-xiaomi": 2364,
+      "client": 2971
+    },
+    "speaker_idle_status": 0,
+    "speaker_volume": 25
+  }
+}

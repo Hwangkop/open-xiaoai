@@ -63,7 +63,7 @@ type TTSConfig struct {
 	Provider string `yaml:"provider"`
 	// 豆包音色 ID，例如 zh_female_taozi_conversation_v4_wvae_bigtts
 	Speaker string `yaml:"speaker"`
-	// 音频格式：mp3（推荐）/ ogg_opus / pcm / wav
+	// 音频格式：wav（notify 叠播推荐）/ mp3 / ogg_opus / pcm
 	Format     string `yaml:"format"`
 	BitRate    int    `yaml:"bit_rate"`
 	SampleRate int    `yaml:"sample_rate"`
@@ -80,7 +80,8 @@ type TTSConfig struct {
 	// Player 播放器选择：auto（按音频格式）/ aplay / miplayer。
 	Player string `yaml:"player"`
 	// WavDevice WAV 用 aplay 时的输出设备：notify（独立 TTS 音量）/ playback（旧实验通道）。
-	WavDevice string `yaml:"wav_device"`
+	WavDevice string             `yaml:"wav_device"`
+	MusicDuck TTSMusicDuckConfig `yaml:"music_duck"`
 }
 
 func (c TTSConfig) UsesDoubao() bool {
@@ -224,6 +225,34 @@ func (c HomeAssistantConfig) Enabled() bool {
 	return strings.TrimSpace(c.BaseURL) != "" && strings.TrimSpace(c.Token) != ""
 }
 
+// BilibiliConfig B 站公开视频音轨搜索、试听与按需下载。
+// 只处理公开可访问内容；Cookie 可选，用于需要登录态才能获取的公开音轨。
+type BilibiliConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	Cookie      string `yaml:"cookie"`
+	CacheDir    string `yaml:"cache_dir"`
+	MusicDir    string `yaml:"music_dir"`
+	Ffmpeg      string `yaml:"ffmpeg"`
+	MaxSizeMB   int    `yaml:"max_size_mb"`
+	SearchLimit int    `yaml:"search_limit"`
+}
+
+// KnowledgeConfig 本地参考资料知识库。
+// Go 管理端负责登记、导入与发布；Node worker 只读 registry 与不可变版本。
+type KnowledgeConfig struct {
+	Enabled bool `yaml:"enabled"`
+	// Root 资料根目录；留空时为 config 同级的 knowledge/。
+	Root string `yaml:"root"`
+	// Node 可执行文件；留空时使用 PATH 里的 node。
+	Node string `yaml:"node"`
+	// Script 只读检索 worker；留空时优先使用 root/server.cjs。
+	Script string `yaml:"script"`
+	// TimeoutSeconds 管理端单次试搜/读取超时，默认 8 秒。
+	TimeoutSeconds int `yaml:"timeout_seconds"`
+	// MaxUploadMB 单份 Markdown/TXT 上传上限，默认 20 MB。
+	MaxUploadMB int `yaml:"max_upload_mb"`
+}
+
 // MusicRouterConfig 音乐态的语义路由（L4）。
 // 白名单/唤醒词/歌词比对都没拦住的句子才交给模型判断意图。
 type MusicRouterConfig struct {
@@ -303,6 +332,9 @@ type AppConfig struct {
 	MusicRouter         MusicRouterConfig   `yaml:"music_router"`
 	Search              SearchConfig        `yaml:"search"`
 	HomeAssistant       HomeAssistantConfig `yaml:"homeassistant"`
+	Bilibili            BilibiliConfig      `yaml:"bilibili"`
+	Knowledge           KnowledgeConfig     `yaml:"knowledge"`
+	Audiobook           AudiobookConfig     `yaml:"audiobook"`
 }
 
 var defaultInterruptKeywords = []string{"闭嘴", "停止", "暂停", "停一下", "不要说了", "别说了"}
@@ -351,6 +383,7 @@ func defaultConfig() *AppConfig {
 			Volume:     defaultTTSVolume,
 			Player:     defaultTTSPlayer,
 			WavDevice:  defaultTTSWavDevice,
+			MusicDuck:  TTSMusicDuckConfig{Percent: defaultTTSMusicDuckPercent},
 		},
 		Doubao2API: Doubao2APIConfig{
 			BaseURL: "http://127.0.0.1:9090",
@@ -372,6 +405,18 @@ func defaultConfig() *AppConfig {
 			Engine:        "llm",
 			TimeoutMs:     1500,
 			MinConfidence: 0.6,
+		},
+		Knowledge: KnowledgeConfig{
+			Enabled:        true,
+			TimeoutSeconds: 8,
+			MaxUploadMB:    20,
+		},
+		Audiobook: AudiobookConfig{Enabled: true, ChunkChars: 180, Prefetch: 2, SynthesisGapMS: 1000},
+		Bilibili: BilibiliConfig{
+			Enabled:     true,
+			Ffmpeg:      "ffmpeg",
+			MaxSizeMB:   800,
+			SearchLimit: 12,
 		},
 	}
 }

@@ -60,3 +60,22 @@ apps/chat/schedule-state.json
 apps/chat/*.local.yaml
 *.local.yaml
 apps/chat/netease-session.json
+apps/chat/bilibili-session.json
+
+# 临时 TTS 音乐音量恢复记录（运行态）
+apps/chat/tts-music-duck.json
+/.bilibili-cache/
+
+# 作者公开原书的本地副本：用固定版本清单下载，保留其独立许可
+/knowledge/books/time-as-a-friend/original/
+/knowledge/books/*/original/
+
+# 知识库运行态与家庭自编资料：部署时单独备份，不进入代码仓库
+/knowledge/.runtime/
+/knowledge/.jobs/
+/knowledge/sources/
+/knowledge/registry.json.bak
+
+# 听书音频与个人进度（运行态，部署时单独备份）
+/apps/chat/audiobooks/
+/audiobooks/
